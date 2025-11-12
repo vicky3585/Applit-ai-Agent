@@ -1,7 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import { storage } from "./storage";
+import { storage } from "./storage-factory";
+import { sandbox } from "./sandbox";
 import OpenAI from "openai";
 
 const openai = new OpenAI({
@@ -229,6 +230,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/workspaces/:id/agent", async (req, res) => {
     const execution = await storage.getAgentExecution(req.params.id);
     res.json(execution || { status: "idle" });
+  });
+
+  // Terminal execution endpoints
+  app.post("/api/workspaces/:id/terminal/execute", async (req, res) => {
+    const { command } = req.body;
+    if (!command) {
+      return res.status(400).json({ error: "Command is required" });
+    }
+    
+    try {
+      const result = await sandbox.executeCommand(command, req.params.id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/workspaces/:id/files/:fileId/execute", async (req, res) => {
+    const file = await storage.getFile(req.params.fileId);
+    if (!file) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    
+    try {
+      const result = await sandbox.executeFile(file.path, req.params.id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/workspaces/:id/packages/install", async (req, res) => {
+    const { packages, packageManager } = req.body;
+    if (!packages || !Array.isArray(packages)) {
+      return res.status(400).json({ error: "Packages array is required" });
+    }
+    if (!["npm", "pip"].includes(packageManager)) {
+      return res.status(400).json({ error: "Package manager must be 'npm' or 'pip'" });
+    }
+    
+    try {
+      const result = await sandbox.installPackages(packages, packageManager, req.params.id);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   return httpServer;
