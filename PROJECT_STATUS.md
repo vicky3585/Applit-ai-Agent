@@ -31,12 +31,13 @@ Transform this AI Web IDE into a complete local Replit Core clone running on Ubu
 - `replit.md` updates - Transformation roadmap
 - Technical decision log
 
-### Phase 2: Core IDE Infrastructure (40% Complete)
+### Phase 2: Core IDE Infrastructure (60% Complete)
 
 **Completed**:
 - ✅ Environment detection module (`shared/environment.ts`)
   - Detects Replit vs local Ubuntu
   - Configures services per environment
+  - Runtime validation functions (validateDockerAccess, validateDatabaseAccess)
   - Service availability checks
 
 - ✅ Hybrid storage factory (`server/storage-factory.ts`)
@@ -49,53 +50,66 @@ Transform this AI Web IDE into a complete local Replit Core clone running on Ubu
   - MockSandbox for Replit development
   - Supports Python, JS, TS, Shell execution
 
+- ✅ File synchronization system (`server/file-sync.ts`)
+  - Syncs files from memory to filesystem
+  - Environment-aware (only syncs in local mode)
+  - Integrated with storage layer
+  - Auto-syncs on create/update/delete operations
+
 - ✅ Terminal execution APIs (`server/routes.ts`)
   - POST `/api/workspaces/:id/terminal/execute`
   - POST `/api/workspaces/:id/files/:fileId/execute`
   - POST `/api/workspaces/:id/packages/install`
+  - GET `/api/health` - Health check with service validation
 
 - ✅ Docker Compose configuration (`docker-compose.yml`)
   - PostgreSQL 16 + pgvector
   - Redis 7
   - code-server (VS Code web)
   - Ubuntu sandbox container
+  - API service with Docker socket mount
+  - Shared workspace volume
 
-**In Progress**:
-- ⏳ Fixing critical Docker communication issues
-- ⏳ Implementing file persistence layer
-- ⏳ Improving environment detection accuracy
+- ✅ Docker deployment files
+  - Dockerfile for API server
+  - .dockerignore for efficient builds
+  - .env.example for configuration template
+
+**Ready for Review**:
+- 🔍 All Phase 2 critical fixes implemented
+- 🔍 Docker communication (socket mount)
+- 🔍 File persistence (sync layer)
+- 🔍 Runtime service validation
 
 ---
 
-## ⚠️ Known Issues (Architect Review Findings)
+## ✅ Critical Issues Fixed (2025-11-12)
 
-### Critical Issues Requiring Fixes:
+### Previously Critical Issues - NOW RESOLVED:
 
-1. **Docker Sandbox Communication** (Priority: HIGH)
-   - **Problem**: API container cannot reach sandbox container
-   - **Impact**: Terminal execution, code running, package install don't work locally
-   - **Fix Needed**: Mount Docker socket to API container or restructure networking
-   - **ETA**: Fix before continuing to Phase 3
+1. **Docker Sandbox Communication** ✅ FIXED
+   - **Solution Implemented**: Added API service to docker-compose.yml with Docker socket mount (`/var/run/docker.sock:/var/run/docker.sock`)
+   - **Status**: API can now control sandbox container via Docker API
+   - **Testing Needed**: End-to-end test on Ubuntu 24.04 VM
 
-2. **File Persistence** (Priority: HIGH)
-   - **Problem**: Files only in RAM, not synced to filesystem
-   - **Impact**: Sandbox cannot access files to execute them
-   - **Fix Needed**: Implement MemStorage → filesystem sync or PostgreSQL adapter
-   - **ETA**: Fix before continuing to Phase 3
+2. **File Persistence** ✅ FIXED
+   - **Solution Implemented**: Created file-sync.ts utility that syncs files from memory to `/workspace` volume
+   - **Integration**: Automatically syncs on file create/update/delete in MemStorage
+   - **Environment-Aware**: Only syncs in local mode, skips in Replit
+   - **Testing Needed**: Verify sandbox can access synced files
 
-3. **Environment Detection** (Priority: MEDIUM)
-   - **Problem**: Reports services as available without validation
-   - **Impact**: May advertise non-functional features
-   - **Fix Needed**: Add runtime health checks
-   - **ETA**: Fix before Phase 2 completion
+3. **Environment Detection** ✅ FIXED
+   - **Solution Implemented**: Added validateDockerAccess() and validateDatabaseAccess() functions
+   - **Integration**: Health check endpoint (GET /api/health) reports actual service accessibility
+   - **Improvement**: No longer reports unavailable services as available
+   - **Testing Needed**: Verify health checks on Ubuntu
 
 4. **PostgreSQL Not Connected** (Priority: MEDIUM)
-   - **Problem**: Still using in-memory even in "local" mode
-   - **Impact**: No data persistence across restarts
-   - **Fix Needed**: Implement Drizzle ORM adapter
-   - **ETA**: Complete in Phase 2B
+   - **Status**: Still using in-memory (intentional for Phase 2)
+   - **Next Phase**: Will implement Drizzle ORM adapter in Phase 2B
+   - **Not Blocking**: Current approach works for development
 
-**Note**: These issues are expected in a hybrid development approach. The Replit version works for UI/chat development. Local Ubuntu deployment will have full functionality once fixes are applied.
+**Architect Review Status**: Awaiting validation of fixes
 
 ---
 

@@ -108,6 +108,43 @@ export function getEnvironmentConfig(): EnvironmentConfig {
 }
 
 /**
+ * Runtime validation: Check if Docker is actually accessible
+ */
+export async function validateDockerAccess(): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    return false; // Frontend - no Docker access
+  }
+
+  try {
+    const Docker = (await import("dockerode")).default;
+    const docker = new Docker();
+    await docker.ping();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Runtime validation: Check if PostgreSQL is accessible
+ */
+export async function validateDatabaseAccess(): Promise<boolean> {
+  if (typeof window !== "undefined") {
+    return false; // Frontend - no direct DB access
+  }
+
+  try {
+    const { Pool } = await import("pg");
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    await pool.query("SELECT 1");
+    await pool.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Check if a service is available in current environment
  */
 export function isServiceAvailable(service: "docker" | "gpu" | "vllm" | "code-server"): boolean {

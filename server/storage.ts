@@ -7,6 +7,7 @@ import {
   type AgentExecution,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
+import { fileSync } from "./file-sync";
 
 export interface IStorage {
   // User methods
@@ -47,6 +48,8 @@ export class MemStorage implements IStorage {
   private files: Map<string, File>;
   private chatMessages: Map<string, ChatMessage>;
   private agentExecutions: Map<string, AgentExecution>;
+  private initialized: boolean = false;
+  private initPromise: Promise<void> | null = null;
 
   constructor() {
     this.users = new Map();
@@ -54,12 +57,27 @@ export class MemStorage implements IStorage {
     this.files = new Map();
     this.chatMessages = new Map();
     this.agentExecutions = new Map();
-    
-    // Initialize with a default workspace
-    this.initializeDefaultData();
   }
 
-  private initializeDefaultData() {
+  /**
+   * Initialize storage with default data
+   * Must be called before using the storage
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+    
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    this.initPromise = this.initializeDefaultData();
+    await this.initPromise;
+    this.initialized = true;
+  }
+
+  private async initializeDefaultData() {
     const defaultWorkspace: Workspace = {
       id: "default-workspace",
       name: "my-project",
@@ -68,6 +86,9 @@ export class MemStorage implements IStorage {
     };
     this.workspaces.set(defaultWorkspace.id, defaultWorkspace);
 
+    // Initialize workspace directory
+    await fileSync.initializeWorkspace(defaultWorkspace.id);
+
     // Add some default files
     const files = [
       { path: "src/App.tsx", content: `import { useState } from 'react';\n\nfunction App() {\n  const [count, setCount] = useState(0);\n\n  return (\n    <div className="App">\n      <h1>Hello World</h1>\n      <p>Count: {count}</p>\n      <button onClick={() => setCount(count + 1)}>\n        Increment\n      </button>\n    </div>\n  );\n}\n\nexport default App;`, language: "typescript" },
@@ -75,17 +96,23 @@ export class MemStorage implements IStorage {
       { path: "package.json", content: `{\n  "name": "my-project",\n  "version": "1.0.0",\n  "dependencies": {\n    "react": "^18.2.0",\n    "react-dom": "^18.2.0"\n  }\n}`, language: "json" },
     ];
 
+    const createdFiles: File[] = [];
     files.forEach(file => {
       const id = randomUUID();
-      this.files.set(id, {
+      const fileObj: File = {
         id,
         workspaceId: defaultWorkspace.id,
         path: file.path,
         content: file.content,
         language: file.language,
         updatedAt: new Date(),
-      });
+      };
+      this.files.set(id, fileObj);
+      createdFiles.push(fileObj);
     });
+
+    // Sync all default files to disk
+    await fileSync.syncFiles(createdFiles);
   }
 
   async getUser(id: string): Promise<User | undefined> {
@@ -163,6 +190,10 @@ export class MemStorage implements IStorage {
       updatedAt: new Date(),
     };
     this.files.set(id, file);
+    
+    // Sync file to disk in local mode
+    await fileSync.syncFile(file);
+    
     return file;
   }
 
@@ -172,11 +203,19 @@ export class MemStorage implements IStorage {
       file.content = content;
       file.updatedAt = new Date();
       this.files.set(id, file);
+      
+      // Sync updated file to disk in local mode
+      await fileSync.syncFile(file);
     }
     return file;
   }
 
   async deleteFile(id: string): Promise<void> {
+    const file = this.files.get(id);
+    if (file) {
+      // Delete from disk in local mode
+      await fileSync.deleteFile(file.path);
+    }
     this.files.delete(id);
   }
 

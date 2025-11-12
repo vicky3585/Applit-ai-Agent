@@ -64,6 +64,35 @@ services:
       - workspace_files:/workspace
     command: /bin/bash -c "apt-get update && apt-get install -y python3 python3-pip nodejs npm && tail -f /dev/null"
 
+  # API Server (Node.js/Express backend)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: webide_api
+    ports:
+      - "5000:5000"
+    environment:
+      - NODE_ENV=production
+      - DEPLOYMENT_ENV=local
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/webide
+      - REDIS_URL=redis://redis:6379
+      - CODE_SERVER_URL=http://code-server:8080
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - SESSION_SECRET=${SESSION_SECRET:-dev-secret-change-in-production}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # Mount Docker socket for sandbox control
+      - workspace_files:/workspace  # Shared workspace with sandbox
+      # Note: DO NOT mount ./:/app as it overwrites node_modules
+      # For development, use a separate docker-compose.dev.yml
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      sandbox:
+        condition: service_started
+
 volumes:
   postgres_data:
   redis_data:

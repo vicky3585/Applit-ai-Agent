@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from "ws";
 import { storage } from "./storage-factory";
 import { sandbox } from "./sandbox";
 import OpenAI from "openai";
+import { ENV_CONFIG, validateDockerAccess, validateDatabaseAccess } from "@shared/environment";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -182,6 +183,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
   }
+
+  // Health check endpoint
+  app.get("/api/health", async (req, res) => {
+    const dockerAvailable = await validateDockerAccess();
+    const dbAvailable = await validateDatabaseAccess();
+
+    res.json({
+      status: "ok",
+      environment: ENV_CONFIG.env,
+      services: {
+        docker: {
+          configured: ENV_CONFIG.sandbox.mode === "docker",
+          accessible: dockerAvailable,
+        },
+        database: {
+          configured: ENV_CONFIG.database.mode,
+          accessible: dbAvailable,
+        },
+        codeServer: {
+          configured: ENV_CONFIG.codeServer.mode === "docker",
+          url: ENV_CONFIG.codeServer.url || null,
+        },
+        gpu: {
+          available: ENV_CONFIG.gpu.available,
+          device: ENV_CONFIG.gpu.device,
+        },
+      },
+    });
+  });
 
   // REST API endpoints
   app.get("/api/workspaces/:id", async (req, res) => {
