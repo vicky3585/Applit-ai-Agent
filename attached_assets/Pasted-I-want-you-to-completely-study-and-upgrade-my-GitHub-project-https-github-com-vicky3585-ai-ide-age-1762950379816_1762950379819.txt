@@ -1,0 +1,99 @@
+I want you to completely study and upgrade my GitHub project https://github.com/vicky3585/ai-ide-agent
+ and turn it into a full local version of Replit’s Core Plan — a 100% working clone that includes all the major features that Replit offers in its paid Core tier.
+
+Your goal is to make it possible for me to build any SaaS or app locally on my own computer (Ubuntu 24.04 with NVIDIA RTX 3060 12 GB GPU). I’ll provide my OpenAI API key for the AI features. Everything should work fully offline on my local server, without any dependency on Replit’s cloud.
+
+🧭 What I Want It to Do (Replit Core-Level Goals)
+
+Full Prompt-to-App IDE:
+Make it possible for me to just write a prompt (like “Build a CRM dashboard with login and database”) — and the system should automatically plan, write, test, and run the complete app with live preview, just like Replit’s AI agent does.
+
+All Replit Core Features (100% Clone):
+
+Browser-based code editor (multi-file, tabs, syntax highlighting, search, autocomplete)
+
+Console/terminal to run and debug code
+
+Instant “Run” and “Stop” buttons with logs and status
+
+Real-time live preview in a split or side panel
+
+File management (create, rename, move, delete)
+
+Package installer (for npm/pip/etc.)
+
+Built-in GitHub import/export with version control
+
+AI code assistant (write, explain, fix, and refactor code)
+
+Multi-language support (Node.js, Python, etc.)
+
+Project templates for web apps, APIs, and static sites
+
+Secure container/sandbox for each project
+
+Option to “Deploy” any app as a standalone container
+
+User login and project dashboard
+
+Local and GPU-Accelerated AI:
+
+Use my RTX 3060 GPU (12 GB) to run AI tasks locally for faster and cheaper processing.
+
+If needed, use my OpenAI API key as fallback for complex tasks.
+
+AI should help in planning, coding, debugging, refactoring, and generating app designs automatically.
+
+Safe, Fast, and Offline:
+
+Make the system completely self-contained — all dependencies installed locally.
+
+It should run safely, sandboxed per project.
+
+Restrict harmful commands or file access beyond the workspace.
+
+Self-Learning and Smart Fixes:
+
+The AI should detect and fix errors automatically up to 3 attempts (like Replit Agent).
+
+It should learn from successful runs and cache previous results for efficiency.
+
+Docs, Examples & Templates:
+
+Add documentation for setup and usage.
+
+Include working templates (React, Vite, Flask, Next.js, etc.) ready to launch instantly.
+
+⚙️ Local Deployment Requirements
+
+Must run fully on Ubuntu 24.04 LTS
+
+Use Docker or Docker Compose to isolate backend, agent, runner, and proxy
+
+Accessible from my local IP address (not a domain)
+
+GPU inference enabled with my 3060 (via CUDA or vLLM, if needed)
+
+No internet required except for OpenAI API when used
+
+🧩 Phased Plan (For Replit Agent to Execute)
+
+Phase 1: Study my existing repo deeply, design the full Replit-like architecture, and list exact modules to upgrade.
+Phase 2: Build the main web IDE (editor, terminal, file tree, live preview).
+Phase 3: Add AI prompt-to-app flow (planner → builder → tester).
+Phase 4: Add package manager, templates, and GitHub integration.
+Phase 5: Add user accounts, multi-project dashboard, and secure sandboxes.
+Phase 6: Add GPU support, offline mode, and cost optimization.
+Phase 7: Test and finalize everything — ensure it works like Replit Core Plan locally with no cloud dependency.
+
+✅ Final Goal
+
+By the end, I should be able to:
+
+Open a browser on my local IP (e.g., http://192.168.x.x:5173)
+
+Type a natural prompt like “Build a personal finance tracker”
+
+Watch the system automatically generate, run, and preview the app in the same window
+
+Edit the code, run it again, and deploy it locally — just like using Replit Core, but on my own machine
