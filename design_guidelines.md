@@ -79,7 +79,7 @@
 ### Code & Content Display
 
 **Code Editor Area**:
-- Full Monaco Editor integration (existing from code-server)
+- Full VS Code experience via code-server (separate service, embedded via iframe)
 - Tab bar for open files: `h-10`, horizontal scroll if overflow
 - Tab items: `px-4`, `min-w-32`, close button on hover
 - Line numbers always visible
