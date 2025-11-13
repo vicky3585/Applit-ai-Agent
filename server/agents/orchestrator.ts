@@ -1,30 +1,11 @@
-import OpenAI from "openai";
 import type { IStorage } from "../storage";
-import type { File, WorkspaceSettings } from "@shared/schema";
 import { PlannerAgent } from "./planner";
 import { CoderAgent } from "./coder";
 import { TesterAgent } from "./tester";
 import { getFilePersistence } from "../file-persistence";
+import type { AgentWorkflowState, AgentContext } from "./types";
 
-export interface AgentWorkflowState {
-  status: "idle" | "processing" | "complete" | "failed";
-  currentStep: "planning" | "coding" | "testing" | "fixing" | "idle" | "complete";
-  progress: number;
-  logs: string[];
-  filesGenerated: Array<{ path: string; content: string; language?: string }>;
-  errors: string[];
-  attemptCount: number;
-  plan?: string;
-  testResults?: any;
-}
-
-export interface AgentContext {
-  workspaceId: string;
-  prompt: string;
-  existingFiles: File[];
-  settings: WorkspaceSettings | null;
-  openai: OpenAI;
-}
+export type { AgentWorkflowState, AgentContext };
 
 export class AgentOrchestrator {
   private storage: IStorage;

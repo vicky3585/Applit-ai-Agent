@@ -457,129 +457,246 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(execution || { status: "idle" });
   });
 
-  // AI Agent - Code generation endpoint (with fallback to TypeScript orchestrator)
+  // AI Agent - Status endpoint for polling
+  app.get("/api/workspaces/:id/agent/status", async (req, res) => {
+    try {
+      const execution = await storage.getAgentExecution(req.params.id);
+      
+      if (!execution) {
+        return res.json({ 
+          status: "idle",
+          current_step: "idle",
+          progress: 0.0,
+          logs: [],
+          files_generated: [],
+          errors: []
+        });
+      }
+      
+      // JSONB fields are already parsed objects
+      const logs = Array.isArray(execution.logs) ? execution.logs : [];
+      const files_generated = Array.isArray(execution.files_generated) ? execution.files_generated : [];
+      const errors = Array.isArray(execution.errors) ? execution.errors : [];
+      
+      res.json({
+        status: execution.status,
+        current_step: execution.current_step,
+        progress: execution.progress,
+        logs,
+        files_generated,
+        errors,
+      });
+    } catch (error: any) {
+      console.error("[Agent] Status error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // AI Agent - Result endpoint for final output
+  app.get("/api/workspaces/:id/agent/result", async (req, res) => {
+    try {
+      const execution = await storage.getAgentExecution(req.params.id);
+      
+      if (!execution) {
+        return res.status(404).json({ error: "No agent execution found" });
+      }
+      
+      if (execution.status !== "complete" && execution.status !== "failed") {
+        return res.status(202).json({ 
+          status: execution.status,
+          message: "Agent is still processing"
+        });
+      }
+      
+      // JSONB fields are already parsed objects
+      const logs = Array.isArray(execution.logs) ? execution.logs : [];
+      const files_generated = Array.isArray(execution.files_generated) ? execution.files_generated : [];
+      const errors = Array.isArray(execution.errors) ? execution.errors : [];
+      
+      res.json({
+        status: execution.status,
+        files_generated,
+        logs,
+        errors,
+      });
+    } catch (error: any) {
+      console.error("[Agent] Result error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // AI Agent - Code generation endpoint (async with status polling)
   app.post("/api/workspaces/:id/agent/generate", async (req, res) => {
     const { prompt } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: "Prompt is required" });
     }
 
-    const pythonAgentUrl = getServiceUrl("python-agent");
+    const workspaceId = req.params.id;
     
-    // If Python agent is available, use it
-    if (pythonAgentUrl) {
-      try {
-        const files = await storage.getFilesByWorkspace(req.params.id);
-        
-        const response = await fetch(`${pythonAgentUrl}/generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+    // Create initial execution record
+    const execution = await storage.createOrUpdateAgentExecution(workspaceId, {
+      prompt,
+      status: "processing",
+      current_step: "planning",
+      progress: 0.0,
+      logs: ["Starting AI agent workflow..."],
+      files_generated: [],
+      errors: [],
+    });
+
+    // Return immediately with 202 Accepted
+    res.status(202).json({ 
+      executionId: execution.id,
+      status: "processing"
+    });
+
+    // Run orchestrator asynchronously
+    (async () => {
+      const pythonAgentUrl = getServiceUrl("python-agent");
+      
+      // If Python agent is available, use it
+      if (pythonAgentUrl) {
+        try {
+          const files = await storage.getFilesByWorkspace(workspaceId);
+          
+          const response = await fetch(`${pythonAgentUrl}/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt,
+              workspace_id: workspaceId,
+              existing_files: files.map(f => ({
+                path: f.path,
+                language: f.language,
+                content: f.content
+              })),
+              context: {}
+            })
+          });
+
+          if (!response.ok) {
+            const error = await response.text();
+            throw new Error(`Python agent error: ${error}`);
+          }
+
+          const result = await response.json();
+          
+          if (result.files_generated && result.files_generated.length > 0) {
+            for (const file of result.files_generated) {
+              await storage.createFile(
+                workspaceId,
+                file.path,
+                file.content,
+                file.language || "plaintext"
+              );
+            }
+          }
+
+          // Update execution with result
+          await storage.createOrUpdateAgentExecution(workspaceId, {
             prompt,
-            workspace_id: req.params.id,
-            existing_files: files.map(f => ({
-              path: f.path,
-              language: f.language,
-              content: f.content
-            })),
-            context: {}
-          })
-        });
-
-        if (!response.ok) {
-          const error = await response.text();
-          throw new Error(`Python agent error: ${error}`);
+            status: result.status || "complete",
+            current_step: "complete",
+            progress: 1.0,
+            logs: JSON.stringify(result.logs || []),
+            files_generated: JSON.stringify(result.files_generated || []),
+            errors: JSON.stringify(result.errors || []),
+          });
+          
+          return;
+        } catch (error: any) {
+          console.error("[Agent] Python agent error:", error);
+          // Fall through to TypeScript orchestrator
         }
+      }
 
-        const result = await response.json();
+      // Fallback: Use TypeScript orchestrator with OpenAI
+      try {
+        console.log("[Agent] Using TypeScript orchestrator (Python agent not available)");
         
-        if (result.files_generated && result.files_generated.length > 0) {
-          for (const file of result.files_generated) {
+        const { AgentOrchestrator } = await import("./agents/orchestrator");
+        const OpenAI = (await import("openai")).default;
+        
+        const files = await storage.getFilesByWorkspace(workspaceId);
+        const settings = await storage.getWorkspaceSettings(workspaceId) || null;
+        
+        const openai = new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY,
+        });
+        
+        const orchestrator = new AgentOrchestrator(storage);
+        
+        const result = await orchestrator.executeWorkflow(
+          {
+            workspaceId,
+            prompt,
+            existingFiles: files,
+            settings,
+            openai,
+          },
+          async (state) => {
+            // Update execution in storage
+            await storage.createOrUpdateAgentExecution(workspaceId, {
+              prompt,
+              status: state.status,
+              current_step: state.currentStep,
+              progress: state.progress,
+              logs: JSON.stringify(state.logs),
+              files_generated: JSON.stringify(state.filesGenerated),
+              errors: JSON.stringify(state.errors),
+            });
+            
+            // Broadcast state updates via WebSocket
+            wss.clients.forEach((client: any) => {
+              if (client.readyState === 1 && client.workspaceId === workspaceId) {
+                client.send(JSON.stringify({
+                  type: "agent-state-update",
+                  data: state,
+                }));
+              }
+            });
+          }
+        );
+        
+        // Create generated files
+        if (result.filesGenerated && result.filesGenerated.length > 0) {
+          for (const file of result.filesGenerated) {
             await storage.createFile(
-              req.params.id,
+              workspaceId,
               file.path,
               file.content,
               file.language || "plaintext"
             );
+            
+            // Broadcast file creation
+            wss.clients.forEach((client: any) => {
+              if (client.readyState === 1 && client.workspaceId === workspaceId) {
+                client.send(JSON.stringify({
+                  type: "file-created",
+                  data: { path: file.path },
+                }));
+              }
+            });
           }
         }
-
-        return res.json(result);
+        
+        console.log("[Agent] Workflow completed successfully");
       } catch (error: any) {
-        console.error("[Agent] Python agent error:", error);
-        // Fall through to TypeScript orchestrator
-      }
-    }
-
-    // Fallback: Use TypeScript orchestrator with OpenAI
-    try {
-      console.log("[Agent] Using TypeScript orchestrator (Python agent not available)");
-      
-      const { AgentOrchestrator } = await import("./agents/orchestrator");
-      const OpenAI = (await import("openai")).default;
-      
-      const files = await storage.getFilesByWorkspace(req.params.id);
-      const settings = await storage.getWorkspaceSettings(req.params.id) || null;
-      
-      const openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      });
-      
-      const orchestrator = new AgentOrchestrator(storage);
-      
-      const result = await orchestrator.executeWorkflow(
-        {
-          workspaceId: req.params.id,
+        console.error("[Agent] Generation error:", error);
+        
+        // Update execution with error
+        await storage.createOrUpdateAgentExecution(workspaceId, {
           prompt,
-          existingFiles: files,
-          settings,
-          openai,
-        },
-        (state) => {
-          // Broadcast state updates via WebSocket
-          wss.clients.forEach((client: any) => {
-            if (client.readyState === 1 && client.workspaceId === req.params.id) {
-              client.send(JSON.stringify({
-                type: "agent-state-update",
-                data: state,
-              }));
-            }
-          });
-        }
-      );
-      
-      // Create generated files
-      if (result.filesGenerated && result.filesGenerated.length > 0) {
-        for (const file of result.filesGenerated) {
-          await storage.createFile(
-            req.params.id,
-            file.path,
-            file.content,
-            file.language || "plaintext"
-          );
-          
-          // Broadcast file creation
-          wss.clients.forEach((client: any) => {
-            if (client.readyState === 1 && client.workspaceId === req.params.id) {
-              client.send(JSON.stringify({
-                type: "file-created",
-                data: { path: file.path },
-              }));
-            }
-          });
-        }
+          status: "failed",
+          current_step: "idle",
+          progress: 0.0,
+          logs: JSON.stringify([`Error: ${error.message}`]),
+          files_generated: JSON.stringify([]),
+          errors: JSON.stringify([error.message]),
+        });
       }
-      
-      res.json({
-        status: result.status,
-        files_generated: result.filesGenerated,
-        logs: result.logs,
-        errors: result.errors,
-      });
-    } catch (error: any) {
-      console.error("[Agent] Generation error:", error);
-      res.status(500).json({ error: error.message });
-    }
+    })().catch(err => console.error("[Agent] Async error:", err));
   });
 
   // Terminal execution endpoints

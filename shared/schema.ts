@@ -58,9 +58,13 @@ export const chatMessages = pgTable("chat_messages", {
 export const agentExecutions = pgTable("agent_executions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   workspaceId: varchar("workspace_id").notNull(),
-  status: text("status").notNull(), // 'planning' | 'coding' | 'testing' | 'fixing' | 'completed' | 'error'
-  currentNode: text("current_node"),
-  metadata: jsonb("metadata"),
+  prompt: text("prompt"),
+  status: text("status").notNull(), // 'idle' | 'processing' | 'complete' | 'failed'
+  current_step: text("current_step").notNull(), // 'idle' | 'planning' | 'coding' | 'testing' | 'fixing' | 'complete'
+  progress: real("progress").notNull().default(0.0), // 0.0 to 1.0
+  logs: jsonb("logs").notNull().default(sql`'[]'::jsonb`), // Array of log messages
+  files_generated: jsonb("files_generated").notNull().default(sql`'[]'::jsonb`), // Array of {path, content, language}
+  errors: jsonb("errors").notNull().default(sql`'[]'::jsonb`), // Array of error messages
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

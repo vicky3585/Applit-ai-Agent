@@ -1,4 +1,4 @@
-import type { AgentContext } from "./orchestrator";
+import type { AgentContext } from "./types";
 
 export class PlannerAgent {
   async createPlan(context: AgentContext): Promise<string> {

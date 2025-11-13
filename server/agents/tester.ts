@@ -1,4 +1,4 @@
-import type { AgentContext } from "./orchestrator";
+import type { AgentContext } from "./types";
 
 export interface TestResult {
   passed: boolean;
