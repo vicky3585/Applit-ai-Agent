@@ -108,6 +108,46 @@ export const workspaceSettings = pgTable("workspace_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Multiplayer Collaboration Tables (Phase 7)
+export const collaborators = pgTable("collaborators", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  role: text("role").notNull().default("viewer"), // 'owner' | 'editor' | 'viewer'
+  inviteToken: text("invite_token").unique(), // For shareable invite links
+  joinedAt: timestamp("joined_at").defaultNow(),
+  lastActiveAt: timestamp("last_active_at").defaultNow(),
+}, (table) => ({
+  // Composite unique constraint: one role per user per workspace
+  uniqueCollaborator: sql`UNIQUE(${table.workspaceId}, ${table.userId})`,
+  workspaceIdIdx: sql`CREATE INDEX IF NOT EXISTS collaborators_workspace_id_idx ON ${table} (${table.workspaceId})`,
+  userIdIdx: sql`CREATE INDEX IF NOT EXISTS collaborators_user_id_idx ON ${table} (${table.userId})`,
+}));
+
+export const yjsDocuments = pgTable("yjs_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  docName: text("doc_name").notNull(), // file path
+  state: text("state"), // Y.Doc serialized state (base64 encoded)
+  stateVector: text("state_vector"), // Y.Doc state vector for sync
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  // Composite unique constraint: one doc per file per workspace
+  uniqueDoc: sql`UNIQUE(${table.workspaceId}, ${table.docName})`,
+  workspaceIdIdx: sql`CREATE INDEX IF NOT EXISTS yjs_documents_workspace_id_idx ON ${table} (${table.workspaceId})`,
+}));
+
+export const collaborationChatMessages = pgTable("collaboration_chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  message: text("message").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  workspaceIdIdx: sql`CREATE INDEX IF NOT EXISTS collab_chat_workspace_id_idx ON ${table} (${table.workspaceId})`,
+  createdAtIdx: sql`CREATE INDEX IF NOT EXISTS collab_chat_created_at_idx ON ${table} (${table.createdAt})`,
+}));
+
 // Auth schemas with normalization and strong validation
 export const registerSchema = z.object({
   username: z.string()
@@ -201,6 +241,29 @@ export const installPackageRequestSchema = z.object({
   packageManager: z.enum(["npm", "pip", "apt"]),
 });
 
+// Multiplayer Schemas (Phase 7)
+export const insertCollaboratorSchema = createInsertSchema(collaborators).pick({
+  workspaceId: true,
+  userId: true,
+  role: true,
+  inviteToken: true,
+});
+
+export const insertYjsDocumentSchema = createInsertSchema(yjsDocuments).pick({
+  workspaceId: true,
+  docName: true,
+  state: true,
+  stateVector: true,
+});
+
+export const insertCollaborationChatMessageSchema = createInsertSchema(collaborationChatMessages).pick({
+  workspaceId: true,
+  userId: true,
+  message: true,
+});
+
+export const collaboratorRoleSchema = z.enum(["owner", "editor", "viewer"]);
+
 export type RegisterRequest = z.infer<typeof registerSchema>;
 export type LoginRequest = z.infer<typeof loginSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -209,6 +272,10 @@ export type InsertPackage = z.infer<typeof insertPackageSchema>;
 export type InstallPackageRequest = z.infer<typeof installPackageRequestSchema>;
 export type InsertWorkspaceSettings = z.infer<typeof insertWorkspaceSettingsSchema>;
 export type UpdateWorkspaceSettings = z.infer<typeof updateWorkspaceSettingsSchema>;
+export type InsertCollaborator = z.infer<typeof insertCollaboratorSchema>;
+export type InsertYjsDocument = z.infer<typeof insertYjsDocumentSchema>;
+export type InsertCollaborationChatMessage = z.infer<typeof insertCollaborationChatMessageSchema>;
+export type CollaboratorRole = z.infer<typeof collaboratorRoleSchema>;
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
@@ -218,6 +285,9 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type AgentExecution = typeof agentExecutions.$inferSelect;
 export type Package = typeof packages.$inferSelect;
 export type CodeExecution = typeof codeExecutions.$inferSelect;
+export type Collaborator = typeof collaborators.$inferSelect;
+export type YjsDocument = typeof yjsDocuments.$inferSelect;
+export type CollaborationChatMessage = typeof collaborationChatMessages.$inferSelect;
 
 // Agent Workflow State types (from Python agent service)
 export type AgentStep = "idle" | "planning" | "coding" | "testing" | "fixing" | "complete" | "failed";
