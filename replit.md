@@ -36,12 +36,12 @@ The system integrates with the OpenAI API for GPT-powered coding assistance. AI 
 - Created module upgrade plan
 - Gap analysis completed
 
-**Phase 2: Core IDE Features** (Planned)
-- Integrate code-server (real VS Code)
-- Implement Docker sandbox for code execution
-- Connect terminal to sandbox with streaming output
-- Build live preview proxy server
-- Migrate from in-memory to PostgreSQL storage
+**Phase 2: Core IDE Features** (In Progress)
+- Task 2.1: Docker Sandbox Infrastructure ✅ (Pending Review)
+- Task 2.2: Code Execution with File Mounting (Planned)
+- Task 2.3: Terminal WebSocket with Streaming Output (Planned)
+- Task 2.4: Live Preview Proxy Server (Planned)
+- Task 2.5: PostgreSQL Storage Migration (Planned)
 
 **Phase 3: AI Prompt-to-App Workflow** (Planned)
 - Create Python LangGraph agent service
@@ -74,6 +74,38 @@ The system integrates with the OpenAI API for GPT-powered coding assistance. AI 
 - Complete documentation
 
 ## Recent Development Progress
+
+**Phase 2 Task 2.1 - Docker Sandbox Infrastructure** (In Review 2025-11-13):
+
+Production-ready container lifecycle management system:
+
+**Architecture**:
+- **SandboxManager**: Centralized Docker container lifecycle management
+- **Container-per-workspace**: Each workspace gets isolated Docker container
+- **Multi-runtime support**: Node.js, Python, Fullstack base images
+- **Resource limits**: Configurable CPU/memory constraints (default: 512MB, 1 CPU)
+- **File mounting**: Workspace files mounted as volumes for bidirectional sync
+
+**Key Features**:
+- State reconciliation on startup (recovers from crashes)
+- Periodic cleanup task (30-minute TTL for idle containers)
+- Metrics logging (CPU/memory usage, execution time tracking)
+- Graceful shutdown with container cleanup
+- Auto-pull Docker images on demand
+- Integration with existing ISandbox interface
+
+**Implementation**:
+- `server/sandbox-manager.ts`: Production Docker lifecycle manager
+- `server/sandbox.ts`: Updated to use SandboxManager
+- `server/index.ts`: Added graceful shutdown handlers
+- Supports both local Docker execution and Replit mock mode
+
+**Next Steps**:
+- Add workspace runtime persistence
+- Implement file sync optimizations  
+- Build terminal streaming integration
+
+## Previous Development Progress
 
 **Phase 4 Task 4.1 - Package Manager** (Completed 2025-11-13):
 - Built PackageManagerPanel UI component with npm/pip/apt support

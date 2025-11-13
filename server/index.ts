@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { storagePromise } from "./storage-factory";
+import { shutdownSandbox } from "./sandbox";
 
 const app = express();
 
@@ -84,4 +85,32 @@ app.use((req, res, next) => {
   }, () => {
     log(`serving on port ${port}`);
   });
+
+  // Graceful shutdown handlers
+  const shutdown = async (signal: string) => {
+    log(`${signal} received, initiating graceful shutdown...`);
+    
+    try {
+      // Cleanup Docker containers
+      await shutdownSandbox();
+      
+      // Close HTTP server
+      server.close(() => {
+        log("HTTP server closed");
+        process.exit(0);
+      });
+      
+      // Force exit after 10 seconds
+      setTimeout(() => {
+        log("Forcing shutdown after timeout");
+        process.exit(1);
+      }, 10000);
+    } catch (error) {
+      log(`Error during shutdown: ${error}`);
+      process.exit(1);
+    }
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 })();

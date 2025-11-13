@@ -8,6 +8,7 @@
 
 import Docker from "dockerode";
 import { ENV_CONFIG, isServiceAvailable } from "@shared/environment";
+import { getSandboxManager } from "./sandbox-manager";
 
 export interface ExecutionResult {
   success: boolean;
@@ -24,90 +25,23 @@ export interface ISandbox {
 }
 
 /**
- * Docker-based sandbox for local execution
+ * Docker-based sandbox for local execution with proper lifecycle management
  */
 class DockerSandbox implements ISandbox {
-  private docker: Docker;
-  private containerName: string;
+  private manager = getSandboxManager();
 
   constructor() {
-    this.docker = new Docker();
-    this.containerName = "webide_sandbox";
+    console.log("[DockerSandbox] Using SandboxManager for container lifecycle");
   }
 
   async executeCommand(command: string, workspaceId: string): Promise<ExecutionResult> {
-    try {
-      const container = this.docker.getContainer(this.containerName);
-      
-      const exec = await container.exec({
-        Cmd: ["/bin/bash", "-c", command],
-        AttachStdout: true,
-        AttachStderr: true,
-        WorkingDir: "/workspace",
-      });
-
-      const stream = await exec.start({ Detach: false });
-      
-      let output = "";
-      stream.on("data", (chunk: Buffer) => {
-        output += chunk.toString();
-      });
-
-      await new Promise((resolve) => stream.on("end", resolve));
-
-      const inspect = await exec.inspect();
-
-      return {
-        success: inspect.ExitCode === 0,
-        output: output.trim(),
-        exitCode: inspect.ExitCode ?? undefined,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        output: "",
-        error: error.message,
-        exitCode: 1,
-      };
-    }
+    // Use bash -c for shell command execution
+    return this.manager.executeInContainer(workspaceId, ["/bin/bash", "-c", command]);
   }
 
   async executeCommandArgv(argv: string[], workspaceId: string): Promise<ExecutionResult> {
-    try {
-      const container = this.docker.getContainer(this.containerName);
-      
-      // Execute command directly with argv array - NO SHELL PARSING
-      const exec = await container.exec({
-        Cmd: argv,
-        AttachStdout: true,
-        AttachStderr: true,
-        WorkingDir: "/workspace",
-      });
-
-      const stream = await exec.start({ Detach: false });
-      
-      let output = "";
-      stream.on("data", (chunk: Buffer) => {
-        output += chunk.toString();
-      });
-
-      await new Promise((resolve) => stream.on("end", resolve));
-
-      const inspect = await exec.inspect();
-
-      return {
-        success: inspect.ExitCode === 0,
-        output: output.trim(),
-        exitCode: inspect.ExitCode ?? undefined,
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        output: "",
-        error: error.message,
-        exitCode: 1,
-      };
-    }
+    // Direct argv execution without shell parsing
+    return this.manager.executeInContainer(workspaceId, argv);
   }
 
   async executeFile(filePath: string, workspaceId: string): Promise<ExecutionResult> {
@@ -214,3 +148,15 @@ export function createSandbox(): ISandbox {
 }
 
 export const sandbox = createSandbox();
+
+/**
+ * Graceful shutdown handler for Docker sandbox cleanup
+ */
+export async function shutdownSandbox(): Promise<void> {
+  if (isServiceAvailable("docker")) {
+    console.log("[Sandbox] Initiating graceful shutdown...");
+    const manager = getSandboxManager();
+    await manager.cleanupAll();
+    console.log("[Sandbox] Shutdown complete");
+  }
+}
