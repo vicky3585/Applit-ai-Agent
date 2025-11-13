@@ -9,9 +9,11 @@ import ChatPanel from "@/components/ChatPanel";
 import TerminalPanel from "@/components/TerminalPanel";
 import AgentStatePanel from "@/components/AgentStatePanel";
 import LogsPanel from "@/components/LogsPanel";
+import { GitPanel } from "@/components/GitPanel";
 import SettingsModal from "@/components/SettingsModal";
 import PackageManagerModal from "@/components/PackageManagerModal";
 import TemplateSelectorModal from "@/components/TemplateSelectorModal";
+import { GitHubBrowserModal } from "@/components/GitHubBrowserModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -47,6 +49,7 @@ export default function IDE() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [packagesOpen, setPackagesOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [githubBrowserOpen, setGithubBrowserOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState("chat");
   const [editorView, setEditorView] = useState<"custom" | "code-server" | "preview">("custom");
   const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -550,6 +553,7 @@ export default function IDE() {
         onPauseAgent={() => console.log("Pause agent")}
         onResetAgent={() => console.log("Reset agent")}
         onTemplates={() => setTemplatesOpen(true)}
+        onGitHub={() => setGithubBrowserOpen(true)}
         onPackages={() => setPackagesOpen(true)}
         onSettings={() => setSettingsOpen(true)}
       />
@@ -639,6 +643,9 @@ export default function IDE() {
               <TabsTrigger value="chat" className="text-xs" data-testid="tab-chat">
                 Chat
               </TabsTrigger>
+              <TabsTrigger value="git" className="text-xs" data-testid="tab-git">
+                Git
+              </TabsTrigger>
               <TabsTrigger value="state" className="text-xs" data-testid="tab-state">
                 State
               </TabsTrigger>
@@ -658,6 +665,9 @@ export default function IDE() {
                 agentWorkflow={agentWorkflow}
                 onFileClick={handleFileClickFromWorkflow}
               />
+            </TabsContent>
+            <TabsContent value="git" className="flex-1 m-0 overflow-hidden">
+              <GitPanel workspaceId={WORKSPACE_ID} />
             </TabsContent>
             <TabsContent value="state" className="flex-1 m-0 overflow-hidden">
               <AgentStatePanel agentStatus={agentStatus} />
@@ -679,6 +689,12 @@ export default function IDE() {
       <PackageManagerModal 
         open={packagesOpen} 
         onClose={() => setPackagesOpen(false)}
+        workspaceId={WORKSPACE_ID}
+      />
+
+      <GitHubBrowserModal
+        open={githubBrowserOpen}
+        onOpenChange={setGithubBrowserOpen}
         workspaceId={WORKSPACE_ID}
       />
 

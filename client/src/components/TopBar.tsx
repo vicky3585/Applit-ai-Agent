@@ -1,4 +1,4 @@
-import { Code2, Play, Pause, RotateCcw, Settings, Moon, Sun, Package, Sparkles } from "lucide-react";
+import { Code2, Play, Pause, RotateCcw, Settings, Moon, Sun, Package, Sparkles, Github } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
@@ -13,6 +13,7 @@ interface TopBarProps {
   onSettings?: () => void;
   onPackages?: () => void;
   onTemplates?: () => void;
+  onGitHub?: () => void;
 }
 
 export default function TopBar({
@@ -24,6 +25,7 @@ export default function TopBar({
   onSettings,
   onPackages,
   onTemplates,
+  onGitHub,
 }: TopBarProps) {
   const [darkMode, setDarkMode] = useState(false);
 
@@ -96,6 +98,15 @@ export default function TopBar({
           data-testid="button-templates"
         >
           <Sparkles className="w-4 h-4" />
+        </Button>
+        
+        <Button 
+          size="icon" 
+          variant="ghost"
+          onClick={onGitHub}
+          data-testid="button-github"
+        >
+          <Github className="w-4 h-4" />
         </Button>
         
         <Button 

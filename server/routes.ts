@@ -933,6 +933,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/workspaces/:id/git/remote - Set remote URL
+  app.post("/api/workspaces/:id/git/remote", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const { url, name = "origin" } = req.body;
+
+      if (!url) {
+        return res.status(400).json({ error: "Remote URL is required" });
+      }
+
+      const result = await git.setRemote(workspaceId, url, name);
+
+      if (result.success) {
+        res.json({ success: true, message: "Remote configured successfully" });
+      } else {
+        res.status(400).json({ error: result.error || "Set remote failed" });
+      }
+    } catch (error: any) {
+      console.error("[Git] Set remote error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Store proxy instances for WebSocket upgrade handling
   const proxies: Array<{ path: string; proxy: any }> = [];
 

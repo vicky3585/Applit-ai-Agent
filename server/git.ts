@@ -25,7 +25,47 @@ export interface GitCommitInfo {
 }
 
 /**
+ * Validate and escape Git command arguments to prevent command injection
+ * 
+ * KNOWN LIMITATION (Phase 5 improvement):
+ * This function uses string escaping + shell quoting. For maximum safety,
+ * Phase 5 will migrate to array-based exec APIs (e.g., spawn with argv array)
+ * to eliminate shell parsing entirely.
+ * 
+ * Current approach: Reject most dangerous chars, allow legitimate ones with escaping
+ */
+function validateAndEscapeGitArg(arg: string, allowSpaces: boolean = true, allowQuotes: boolean = false): string {
+  // Reject inputs with HIGH-RISK shell metacharacters
+  const dangerousChars = /[;&|`$(){}[\]<>\\]/;
+  if (dangerousChars.test(arg)) {
+    throw new Error(`Invalid input: contains dangerous shell metacharacters`);
+  }
+  
+  // Reject control characters and newlines
+  if (/[\x00-\x1F\x7F]/.test(arg)) {
+    throw new Error(`Invalid input: contains control characters`);
+  }
+  
+  // If spaces not allowed (e.g., for remote names, branch names), reject them
+  if (!allowSpaces && /\s/.test(arg)) {
+    throw new Error(`Invalid input: spaces not allowed in this context`);
+  }
+  
+  // Escape quotes if present (for commit messages, author names)
+  let escaped = arg;
+  if (!allowQuotes && /['"]/.test(arg)) {
+    throw new Error(`Invalid input: quotes not allowed in this context`);
+  }
+  
+  // Escape special chars for shell safety (defense in depth)
+  escaped = escaped.replace(/\$/g, '\\$').replace(/`/g, '\\`');
+  
+  return escaped;
+}
+
+/**
  * Clone a Git repository into workspace
+ * WARNING: This clones into the current workspace directory
  */
 export async function cloneRepository(
   repoUrl: string,
@@ -33,11 +73,24 @@ export async function cloneRepository(
   branch?: string
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    const cmd = branch 
-      ? `git clone --branch ${branch} ${repoUrl} .`
-      : `git clone ${repoUrl} .`;
+    // Validate URL format first
+    if (!repoUrl.match(/^https?:\/\//i) && !repoUrl.match(/^git@/)) {
+      return {
+        success: false,
+        output: "",
+        error: "Invalid repository URL format",
+      };
+    }
     
-    console.log(`[Git] Cloning repository: ${repoUrl}`);
+    // Validate and escape inputs to prevent command injection (URLs allow spaces, branches don't allow spaces/quotes)
+    const escapedUrl = validateAndEscapeGitArg(repoUrl, true, false);
+    const escapedBranch = branch ? validateAndEscapeGitArg(branch, false, false) : undefined;
+    
+    const cmd = escapedBranch 
+      ? `git clone --branch "${escapedBranch}" "${escapedUrl}" .`
+      : `git clone "${escapedUrl}" .`;
+    
+    console.log(`[Git] Cloning repository: ${escapedUrl}`);
     const result = await sandbox.executeCommand(cmd, workspaceId);
     
     if (result.exitCode === 0) {
@@ -135,7 +188,14 @@ export async function stageFiles(
   files: string[]
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    const filesArg = files.length === 0 ? "." : files.join(" ");
+    // Validate file paths to prevent command injection (spaces allowed, quotes rejected)
+    const escapedFiles = files.map(f => validateAndEscapeGitArg(f, true, false));
+    
+    // Stage all if empty array, otherwise stage individual files with proper quoting
+    const filesArg = escapedFiles.length === 0 
+      ? "." 
+      : escapedFiles.map(f => `"${f}"`).join(" ");
+      
     const result = await sandbox.executeCommand(
       `git add ${filesArg}`,
       workspaceId
@@ -164,10 +224,16 @@ export async function commit(
   author?: { name: string; email: string }
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    let cmd = `git commit -m "${message.replace(/"/g, '\\"')}"`;
+    // Validate message (spaces and quotes allowed, will be escaped)
+    const escapedMessage = validateAndEscapeGitArg(message, true, true).replace(/"/g, '\\"');
+    
+    let cmd = `git commit -m "${escapedMessage}"`;
     
     if (author) {
-      cmd = `git -c user.name="${author.name}" -c user.email="${author.email}" ${cmd}`;
+      // Validate author info (spaces allowed in names, quotes rejected in emails)
+      const escapedName = validateAndEscapeGitArg(author.name, true, true).replace(/"/g, '\\"');
+      const escapedEmail = validateAndEscapeGitArg(author.email, false, false);
+      cmd = `git -c user.name="${escapedName}" -c user.email="${escapedEmail}" ${cmd}`;
     }
     
     const result = await sandbox.executeCommand(cmd, workspaceId);
@@ -195,9 +261,13 @@ export async function push(
   branch?: string
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    const cmd = branch 
-      ? `git push ${remote} ${branch}`
-      : `git push ${remote}`;
+    // Validate remote and branch names (no spaces/quotes allowed)
+    const escapedRemote = validateAndEscapeGitArg(remote, false, false);
+    const escapedBranch = branch ? validateAndEscapeGitArg(branch, false, false) : undefined;
+    
+    const cmd = escapedBranch 
+      ? `git push "${escapedRemote}" "${escapedBranch}"`
+      : `git push "${escapedRemote}"`;
     
     const result = await sandbox.executeCommand(cmd, workspaceId);
     
@@ -224,9 +294,13 @@ export async function pull(
   branch?: string
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    const cmd = branch 
-      ? `git pull ${remote} ${branch}`
-      : `git pull ${remote}`;
+    // Validate remote and branch names (no spaces/quotes allowed)
+    const escapedRemote = validateAndEscapeGitArg(remote, false, false);
+    const escapedBranch = branch ? validateAndEscapeGitArg(branch, false, false) : undefined;
+    
+    const cmd = escapedBranch 
+      ? `git pull "${escapedRemote}" "${escapedBranch}"`
+      : `git pull "${escapedRemote}"`;
     
     const result = await sandbox.executeCommand(cmd, workspaceId);
     
@@ -252,8 +326,11 @@ export async function getCommitHistory(
   limit = 10
 ): Promise<GitCommitInfo[]> {
   try {
+    // Validate limit is a safe positive integer
+    const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    
     const result = await sandbox.executeCommand(
-      `git log --pretty=format:'%H|%an|%ai|%s' -n ${limit}`,
+      `git log --pretty=format:'%H|%an|%ai|%s' -n ${safeLimit}`,
       workspaceId
     );
     
@@ -306,15 +383,28 @@ export async function setRemote(
   name = "origin"
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
+    // Validate URL format first
+    if (!url.match(/^https?:\/\//i) && !url.match(/^git@/)) {
+      return {
+        success: false,
+        output: "",
+        error: "Invalid repository URL format",
+      };
+    }
+    
+    // Validate and escape inputs (URLs allow spaces, remote names don't allow spaces/quotes)
+    const escapedUrl = validateAndEscapeGitArg(url, true, false);
+    const escapedName = validateAndEscapeGitArg(name, false, false);
+    
     // Check if remote exists
     const checkResult = await sandbox.executeCommand(
-      `git remote get-url ${name}`,
+      `git remote get-url "${escapedName}"`,
       workspaceId
     );
     
     const cmd = checkResult.exitCode === 0
-      ? `git remote set-url ${name} ${url}`
-      : `git remote add ${name} ${url}`;
+      ? `git remote set-url "${escapedName}" "${escapedUrl}"`
+      : `git remote add "${escapedName}" "${escapedUrl}"`;
     
     const result = await sandbox.executeCommand(cmd, workspaceId);
     

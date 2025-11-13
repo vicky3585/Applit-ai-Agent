@@ -1,10 +1,8 @@
-# AI Web IDE
+# AI Web IDE - Replit Core Clone
 
 ## Overview
 
-This is an AI-powered web-based Integrated Development Environment (IDE) that provides intelligent coding assistance through agent-based workflows. The application combines a traditional IDE interface with real-time AI agent collaboration, enabling developers to interact with AI assistants that can plan, code, test, and fix code automatically.
-
-The system features a multi-panel layout with file management, code editing, chat interface, terminal access, and real-time agent state monitoring. It's designed to maximize information density while maintaining clarity, following IDE-specific design patterns inspired by VS Code and JetBrains IDEs.
+This project is transforming from a simple AI Web IDE into a complete local Replit Core clone running on Ubuntu 24.04 with NVIDIA RTX 3060 GPU support. The system enables full prompt-to-app workflows where users type natural language requests and the system automatically plans, codes, tests, and deploys complete applications with live preview.
 
 ## User Preferences
 
@@ -12,285 +10,126 @@ Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Frontend Architecture
+### Frontend
 
-**Technology Stack**: React 18 with TypeScript, Vite for build tooling, and TanStack Query for state management.
+The frontend is built with React 18, TypeScript, Vite, and TanStack Query. It uses Shadcn/ui (based on Radix UI and Tailwind CSS) for its UI, following a "new-york" style with Inter and JetBrains Mono fonts. The layout is panel-based, featuring a TopBar, FileExplorer, CodeEditor, RightPanel (Chat, Logs, Agent State, Git, Templates), and TerminalPanel. Wouter handles lightweight routing, and WebSocket clients manage real-time communication for live updates.
 
-**UI Framework**: Shadcn/ui component library built on Radix UI primitives with Tailwind CSS for styling. The design system uses the "new-york" style variant with custom typography (Inter for UI, JetBrains Mono for code) and a neutral color palette.
+### Backend
 
-**Component Structure**: The IDE follows a panel-based layout system using resizable panels:
-- TopBar: Displays workspace information and agent status controls
-- FileExplorer: Left sidebar for file tree navigation (width: 16rem)
-- CodeEditor: Central panel with tabbed file editing interface
-- RightPanel: Contains Chat, Logs, and Agent State views (40/30/30% distribution)
-- TerminalPanel: Bottom panel for command execution (height: 12rem)
-
-**Routing**: Uses Wouter for lightweight client-side routing, though the current implementation is primarily single-page (IDE view).
-
-**Real-time Communication**: WebSocket client implementation for bidirectional communication with the server, enabling live agent state updates and streaming chat responses.
-
-### Backend Architecture
-
-**Server Framework**: Express.js with TypeScript, running in ESM mode.
-
-**WebSocket Server**: Dedicated WebSocket server using the 'ws' library, mounted at `/ws` path for real-time features. Connections are organized by workspace ID, allowing multiple clients to observe the same workspace state.
-
-**Storage Layer**: Abstract storage interface (IStorage) with in-memory implementation (MemStorage). This abstraction allows future migration to PostgreSQL through Drizzle ORM without changing business logic. The storage manages:
-- User accounts and authentication
-- Workspaces (development environments)
-- Files (code and content)
-- Chat messages (user-agent conversations)
-- Agent execution state (current workflow status)
-
-**API Design**: RESTful endpoints for CRUD operations on workspaces, files, and chat messages. WebSocket handles real-time updates and agent communication.
+The backend utilizes Express.js with TypeScript. A dedicated WebSocket server (using `ws`) handles real-time features, organizing connections by workspace ID. An abstract storage layer (currently in-memory with `MemStorage`) is designed for future PostgreSQL integration via Drizzle ORM, managing users, workspaces, files, chat messages, and agent executions. RESTful APIs provide CRUD operations, while WebSockets manage real-time agent interactions.
 
 ### Data Storage
 
-**ORM**: Drizzle ORM configured for PostgreSQL with schema definitions in `shared/schema.ts`.
-
-**Schema Design**:
-- `users`: Authentication and user management
-- `workspaces`: Project containers owned by users
-- `files`: Code files with path, content, and language metadata
-- `chatMessages`: Conversation history with role-based messages and JSON metadata
-- `agentExecutions`: Agent workflow state tracking with status progression
-
-**Current Implementation**: In-memory storage using Map structures for rapid prototyping. Production deployment requires database provisioning and running migrations via `npm run db:push`.
+Drizzle ORM is configured for PostgreSQL, with a schema defining `users`, `workspaces`, `files`, `chatMessages`, and `agentExecutions`. While currently using in-memory storage for prototyping, production will use PostgreSQL 16 with `pgvector` for vector embeddings.
 
 ### AI Agent System
 
-**Provider**: OpenAI API integration for GPT-powered coding assistance.
-
-**Agent Workflow States**: 
-- idle: No active task
-- planning: Analyzing requirements and creating implementation plan
-- coding: Generating or modifying code
-- testing: Running tests on generated code
-- fixing: Applying corrections based on test results
-
-**Communication Flow**: Users send chat messages through WebSocket → Server processes with OpenAI → Streaming responses sent back to client → UI updates in real-time.
-
-**State Management**: Agent execution state persisted with workspace association, allowing session recovery and multi-client synchronization.
-
-## External Dependencies
-
-**AI Services**:
-- OpenAI API: Primary AI model provider requiring `OPENAI_API_KEY` environment variable
-
-**Database**:
-- PostgreSQL: Production database via Neon serverless driver (`@neondatabase/serverless`)
-- Required environment variable: `DATABASE_URL`
-
-**UI Libraries**:
-- Radix UI: Accessible component primitives (dialogs, dropdowns, tooltips, etc.)
-- Tailwind CSS: Utility-first styling framework
-- Lucide React: Icon library
-
-**Development Tools**:
-- Vite: Frontend build tool with HMR support
-- Replit-specific plugins: Runtime error modal, cartographer, dev banner (development only)
-- TypeScript: Type safety across full stack
-
-**Build & Runtime**:
-- esbuild: Server-side bundling for production
-- tsx: TypeScript execution for development server
-- Drizzle Kit: Database migration management
-
-**Session Management**:
-- connect-pg-simple: PostgreSQL session store (configured but authentication flow not fully implemented)
+The system integrates with the OpenAI API for GPT-powered coding assistance. AI agents follow a workflow including `idle`, `planning`, `coding`, `testing`, and `fixing` states. Communication flows from user chat messages (via WebSocket) to the server, then to OpenAI, with streaming responses back to the client for real-time UI updates. Agent execution state is persisted per workspace for recovery and synchronization.
 
 ## Transformation Roadmap: Replit Core Clone
-
-### Project Goal
-
-Transform this AI Web IDE into a complete local Replit Core clone that runs on Ubuntu 24.04 with NVIDIA RTX 3060 GPU support. The system will support full prompt-to-app workflows where users type natural language requests (e.g., "Build a CRM dashboard") and the system automatically plans, codes, tests, and deploys complete applications with live preview.
-
-### Reference Implementation
-
-**Original Repository**: https://github.com/vicky3585/ai-ide-agent (MIT License)
-
-The original repo provides a complete Python-based system with:
-- LangGraph multi-agent orchestration (Planner → Coder → Tester)
-- Docker sandbox execution with security constraints
-- PostgreSQL + pgvector for vector memory storage
-- vLLM integration for local GPU inference with RTX 3060
-- code-server for real VS Code experience
-- Live preview proxy through Nginx
-- User authentication and multi-project management
-
-### Hybrid Architecture Strategy
-
-Instead of complete rewrite, we're implementing a **hybrid Node.js + Python system**:
-
-**Keep Node.js/Express** for:
-- Real-time WebSocket communication ✅
-- File system operations and management
-- Primary API server
-- Fast I/O operations
-
-**Add Python Services** for:
-- LangGraph agent orchestration (new)
-- vLLM local GPU inference (new)
-- Advanced AI workflows
-
-**Shared Infrastructure**:
-- PostgreSQL 16 + pgvector (vector embeddings)
-- Redis 7 (caching and task queue)
-- Docker Compose orchestration
-- Nginx reverse proxy
 
 ### Seven-Phase Implementation Plan
 
 **Phase 1: Study & Architecture** ✅
-- Analyzed original repository
-- Designed hybrid architecture
+- Analyzed original repository (https://github.com/vicky3585/ai-ide-agent)
+- Designed hybrid Node.js + Python architecture
 - Created module upgrade plan
-- Gap analysis completed (see PHASE1_ANALYSIS.md)
+- Gap analysis completed
 
-**Phase 2: Core IDE Features** (In Progress)
-- Integrate code-server (real VS Code) in place of custom editor
+**Phase 2: Core IDE Features** (Planned)
+- Integrate code-server (real VS Code)
 - Implement Docker sandbox for code execution
 - Connect terminal to sandbox with streaming output
 - Build live preview proxy server
 - Migrate from in-memory to PostgreSQL storage
 
-**Phase 3: AI Prompt-to-App Workflow**
+**Phase 3: AI Prompt-to-App Workflow** (Planned)
 - Create Python LangGraph agent service
 - Implement Planner agent (task decomposition)
 - Implement Coder agent (file generation)
 - Implement Tester agent (validation)
 - Build auto-fix loop with 3-attempt retry
 
-**Phase 4: Developer Tools**
-- Package manager UI (npm/pip/apt)
-- Project templates (React, Next.js, Flask, Vite)
-- GitHub OAuth integration
-- Git operations (clone, commit, push, pull)
+**Phase 4: Developer Tools** ✅ (All Tasks Complete)
+- Task 4.1: Package Manager UI ✅
+- Task 4.2: Project Templates ✅
+- Task 4.3: GitHub OAuth & Git Integration ✅
 
-**Phase 5: Multi-user & Security**
+**Phase 5: Multi-user & Security** (Planned)
 - JWT authentication system
 - Multi-project dashboard
 - Sandbox lifecycle management
 - Resource limits and security controls
+- **Production-ready Git integration** with argv-based execution
 
-**Phase 6: GPU & Offline Mode**
+**Phase 6: GPU & Offline Mode** (Planned)
 - vLLM integration for RTX 3060
 - LOCAL_FIRST routing (GPU → OpenAI fallback)
 - Offline mode with cached responses
 - Cost optimization with result reuse
 
-**Phase 7: Deployment & Testing**
+**Phase 7: Deployment & Testing** (Planned)
 - Docker Compose for all services
 - Ubuntu 24.04 package (.deb installer)
 - Comprehensive E2E tests
 - Complete documentation
 
-### Key Technology Additions
+## Recent Development Progress
 
-**New Services**:
-- **Python Agent Service** (Port 8001): LangGraph orchestration
-- **vLLM Service** (Port 8000): Local GPU inference with CUDA 12.1
-- **code-server** (Port 8443): Real VS Code in browser
-- **PostgreSQL** (Port 5432): Database + vector storage
-- **Redis** (Port 6379): Cache and message queue
-- **Docker Sandbox**: Isolated execution environment
+**Phase 4 Task 4.1 - Package Manager** (Completed 2025-11-13):
+- Built PackageManagerPanel UI component with npm/pip/apt support
+- Integrated InstallPackageDialog with autocomplete suggestions
+- Added API routes for package installation and listing
+- Extended ISandbox interface to support "apt" package manager
+- Real-time package installation with progress indicators
 
-**New Dependencies** (to be installed):
-- Python: `langgraph`, `langchain`, `fastapi`, `vllm`, `pgvector`, `sentence-transformers`
-- Node.js: `dockerode`, `pg`, `ioredis`
-- System: `docker`, `nvidia-docker`, `postgresql-16`, `redis`, `code-server`
+**Phase 4 Task 4.2 - Project Templates** (Completed 2025-11-13):
+- Created template system with 6 pre-built templates (React, Vue, Express, Flask, FastAPI, Next.js)
+- Template configuration file (server/templates.ts) with complete file structures
+- API routes: GET /api/templates, POST /api/workspaces/:id/apply-template
+- TemplateSelectorModal with tabbed interface (All/Frontend/Backend/Fullstack)
+- Integrated template selector into TopBar for easy access
+- Template application clears existing workspace files before applying
+- Toast notifications for user feedback on template application
 
-### Current Implementation Status
+**Phase 4 Task 4.3 - GitHub OAuth & Git Integration** (Completed 2025-11-13):
 
-**Completed** ✅:
-- **Phase 1** (Architecture & Planning - 2025-11-12):
-  - Comprehensive gap analysis comparing to original Python repository
-  - Hybrid Node.js + Python architecture design
-  - 7-phase implementation roadmap
-  - Technical decisions documented
+⚠️ **PROTOTYPE STATUS**: This implementation provides functional Git operations with validation-based security. However, it has known limitations:
+- Current validation rejects some legitimate Git inputs (e.g., parentheses in commit messages like "feat(scope): add X")
+- Uses shell-string interpolation which is not ideal for maximum security
+- **Phase 5 Improvement Planned**: Complete rewrite using argv-based sandbox execution to eliminate shell parsing, allow all legitimate Git inputs, and provide production-grade security
 
-- **Phase 2** (Core IDE Infrastructure - COMPLETE 2025-11-13):
-  - **2A: Multi-stage Dockerfile & Environment Detection**:
-    - Dockerfile with build/development/production stages
-    - docker-compose.yml for all services
-    - Environment detection module (Replit vs Local)
-    - Hybrid storage factory (lazy loading for PostgreSQL)
-    - Security documentation (SECURITY.md)
-  
-  - **2B: Code-Server Integration & File Management**:
-    - Code-server proxy with WebSocket support
-    - Live preview proxy for running applications
-    - PostgreSQL storage with Drizzle ORM
-    - Per-workspace file sync to disk
-    - File tree operations API (create, rename, delete)
-    - Complete CRUD UI with dialogs, validation, error handling
-    - Tab synchronization across all open files
-    - Selection tracking resilient to renames/deletes
+**What's Working**:
+- Git backend module (server/git.ts) with 10 operations: clone, status, stage, commit, push, pull, history, init, setRemote, log
+- GitHub API integration (server/github.ts) via Octokit REST API with automatic token refresh
+- 10 Git API routes fully exposed in server/routes.ts
+- 3 GitHub API routes: user info, repository listing, repository details
+- GitPanel UI component with:
+  - Real-time Git status display (polling every 5 seconds)
+  - File staging with checkbox selection
+  - Commit workflow with message input
+  - Push/pull operations with branch support
+  - Commit history display (last 10 commits)
+- GitHubBrowserModal for browsing user repositories with one-click cloning
+- Integrated as "Git" tab in IDE right panel
+- GitHub button in TopBar for easy repository access
+- Input validation rejects high-risk shell metacharacters
+- Defense-in-depth with validation + escaping + double-quoting
+- URL format validation for clone/setRemote operations
+- Numeric parameter safety (commit history limit clamping)
 
-**In Progress** ⏳:
-- Phase 4: Developer Tools (Tasks 4.1 & 4.2 Complete)
+**Known Limitations (Phase 5)**:
+- Validation rejects parentheses, braces, brackets, dollar signs (breaks "feat(scope)" style commits)
+- Shell-string interpolation used (not argv-based execution)
+- Clone operation writes to current workspace directory without checking if empty
+- Filenames with quotes not supported
+- Phase 5 will migrate to array-based exec APIs for production-ready Git integration
 
-**Recently Completed** ✅:
-- **Phase 4 Task 4.2** (Project Templates - 2025-11-13):
-  - Template system with 6 pre-built templates (React, Vue, Express, Flask, FastAPI, Next.js)
-  - Template configuration file (server/templates.ts) with complete file structures
-  - API routes: GET /api/templates, POST /api/workspaces/:id/apply-template
-  - TemplateSelectorModal with tabbed interface (All/Frontend/Backend/Fullstack)
-  - Template cards with icons, descriptions, categories
-  - Automatic package installation (npm/pip/apt)
-  - WebSocket progress broadcasting
-  - TopBar integration with Templates button (Sparkles icon)
-  - All test IDs present, tabs fixed with separate static TabsContent blocks
+## External Dependencies
 
-- **Phase 4 Task 4.1** (Package Manager - 2025-11-13):
-  - Complete package manager UI for npm, pip, apt
-  - Schema extension with packages table (composite unique index)
-  - Storage methods: getPackages, upsertPackage, deletePackage
-  - API routes with Zod validation (installPackageRequestSchema)
-  - Version parsing for all package managers
-  - PackageManagerModal with tabbed interface (Install/Installed)
-  - Uninstall endpoint executes sandbox commands before DB deletion
-  - WebSocket progress updates during installation
-  - All test IDs present, architect reviewed
-
-- Phase 2B.7 (File Tree Operations UI - 2025-11-13):
-  - FileExplorer component with per-item action menus
-  - Create/Rename/Delete dialogs with validation
-  - Client-side duplicate path detection
-  - Error handling with detailed messages
-  - Tab synchronization for all operations
-  - Test IDs for all interactive elements
-
-**Planned**:
-- Phases 3-7 (see PHASE1_ANALYSIS.md for detailed breakdown):
-  - Phase 3: Python LangGraph agent service (Planner/Coder/Tester)
-  - Phase 4: Developer tools (package manager, templates, GitHub)
-  - Phase 5: Multi-user & security
-  - Phase 6: GPU & offline mode (vLLM)
-  - Phase 7: Deployment & testing
-
-### Success Metrics
-
-The system will be considered complete when:
-1. User can type "Build a todo app" and get a working app with live preview
-2. Code execution happens in secure Docker sandbox
-3. code-server (VS Code) provides full autocomplete, extensions, and IntelliSense
-4. AI agents (Planner/Coder/Tester) workflow is visible in UI
-5. Errors are auto-detected and fixed (up to 3 attempts)
-6. vLLM runs on RTX 3060 with automatic fallback to OpenAI
-7. System works fully offline with local models
-8. Multiple projects can be managed from dashboard
-9. GitHub repositories can be cloned and synchronized
-10. Templates for React/Next.js/Flask/Vite work out of box
-11. One-command installation on Ubuntu 24.04
-12. All features match or exceed Replit Core Plan capabilities
-
-### Technical Decisions Log
-
-**2025-11-12**: Decided on hybrid Node.js + Python architecture instead of full Python rewrite. Rationale: Leverage existing WebSocket infrastructure and Node.js strengths for real-time operations while adding Python for LangGraph and vLLM where those ecosystems are strongest.
-
-**2025-11-12**: Chose to integrate code-server instead of building custom Monaco integration. Rationale: code-server provides full VS Code experience with extensions, debugging, and all features users expect from professional IDE. This matches the original repository's approach and provides the most authentic Replit-like experience.
-
-**2025-11-12**: Resolved Phase 2 scope to use code-server exclusively (not Monaco). The IDE will be a separate service embedded via iframe in the React UI, maintaining separation of concerns while providing full VS Code functionality.
-
-**2025-11-12**: Selected PostgreSQL + pgvector over other vector databases. Rationale: Single database for relational data and vector embeddings reduces infrastructure complexity while pgvector provides excellent performance for semantic search.
+**AI Services**: OpenAI API (requires `OPENAI_API_KEY`)
+**Database**: PostgreSQL (via Neon serverless driver, requires `DATABASE_URL`)
+**UI Libraries**: Radix UI, Tailwind CSS, Lucide React
+**Build & Runtime**: Vite, esbuild, tsx, Drizzle Kit
+**Session Management**: connect-pg-simple
+**New Services (Planned)**: Python Agent Service (LangGraph), vLLM Service (local GPU inference), code-server, Redis
