@@ -1,4 +1,4 @@
-import { Code2, Play, Pause, RotateCcw, Settings, Moon, Sun } from "lucide-react";
+import { Code2, Play, Pause, RotateCcw, Settings, Moon, Sun, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useState } from "react";
@@ -11,6 +11,7 @@ interface TopBarProps {
   onPauseAgent?: () => void;
   onResetAgent?: () => void;
   onSettings?: () => void;
+  onPackages?: () => void;
 }
 
 export default function TopBar({
@@ -20,6 +21,7 @@ export default function TopBar({
   onPauseAgent,
   onResetAgent,
   onSettings,
+  onPackages,
 }: TopBarProps) {
   const [darkMode, setDarkMode] = useState(false);
 
@@ -84,6 +86,15 @@ export default function TopBar({
         </Button>
         
         <div className="w-px h-6 bg-border" />
+        
+        <Button 
+          size="icon" 
+          variant="ghost"
+          onClick={onPackages}
+          data-testid="button-packages"
+        >
+          <Package className="w-4 h-4" />
+        </Button>
         
         <Button 
           size="icon" 

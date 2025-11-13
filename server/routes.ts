@@ -6,6 +6,7 @@ import { storage } from "./storage-factory";
 import { sandbox } from "./sandbox";
 import OpenAI from "openai";
 import { ENV_CONFIG, validateDockerAccess, validateDatabaseAccess, getServiceUrl } from "@shared/environment";
+import { installPackageRequestSchema } from "@shared/schema";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -374,20 +375,193 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/workspaces/:id/packages/install", async (req, res) => {
-    const { packages, packageManager } = req.body;
-    if (!packages || !Array.isArray(packages)) {
-      return res.status(400).json({ error: "Packages array is required" });
+  // Package Management Routes
+  
+  // GET /api/workspaces/:id/packages - List installed packages
+  app.get("/api/workspaces/:id/packages", async (req, res) => {
+    try {
+      const packages = await storage.getPackages(req.params.id);
+      res.json(packages);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
-    if (!["npm", "pip"].includes(packageManager)) {
-      return res.status(400).json({ error: "Package manager must be 'npm' or 'pip'" });
+  });
+  
+  // POST /api/workspaces/:id/packages/install - Install package(s)
+  app.post("/api/workspaces/:id/packages/install", async (req, res) => {
+    const workspaceId = req.params.id;
+    
+    // Validate request body using Zod
+    const validation = installPackageRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ 
+        errorCode: "INVALID_REQUEST",
+        error: "Invalid request body",
+        details: validation.error.errors 
+      });
+    }
+    
+    const { packages, packageManager } = validation.data;
+    
+    // Broadcast install progress to workspace
+    const workspaceConnections = connections.get(workspaceId);
+    function broadcastProgress(message: string) {
+      workspaceConnections?.forEach((client) => {
+        if (client.readyState === 1) {
+          client.send(JSON.stringify({
+            type: "package_install_progress",
+            data: { message, packageManager, packages },
+          }));
+        }
+      });
     }
     
     try {
-      const result = await sandbox.installPackages(packages, packageManager, req.params.id);
-      res.json(result);
+      broadcastProgress("Installing packages...");
+      
+      // Install packages using sandbox
+      const result = await sandbox.installPackages(packages, packageManager as any, workspaceId);
+      
+      if (result.exitCode !== 0) {
+        // Parse error message
+        const errorOutput = result.error || result.output || "Unknown error";
+        let errorCode = "INSTALL_FAILED";
+        let errorMessage = errorOutput;
+        
+        if (errorOutput.includes("404") || errorOutput.includes("not found") || errorOutput.includes("No matching")) {
+          errorCode = "PACKAGE_NOT_FOUND";
+          errorMessage = "One or more packages were not found in the registry.";
+        } else if (errorOutput.includes("EACCES") || errorOutput.includes("permission denied")) {
+          errorCode = "PERMISSION_DENIED";
+          errorMessage = "Permission denied. Try using a different package manager.";
+        } else if (errorOutput.includes("ENOTFOUND") || errorOutput.includes("network")) {
+          errorCode = "NETWORK_ERROR";
+          errorMessage = "Network error. Please check your connection.";
+        }
+        
+        broadcastProgress(`Installation failed: ${errorMessage}`);
+        return res.status(400).json({ errorCode, error: errorMessage, details: errorOutput });
+      }
+      
+      // Parse versions and save to storage
+      broadcastProgress("Verifying installed versions...");
+      const installedPackages = [];
+      
+      for (const pkgName of packages) {
+        try {
+          let version: string | null = null;
+          
+          // Parse version based on package manager
+          if (packageManager === "npm") {
+            const versionCmd = await sandbox.executeCommand(
+              `npm ls ${pkgName} --json --depth=0`,
+              workspaceId
+            );
+            if (versionCmd.exitCode === 0 && versionCmd.output) {
+              try {
+                const parsed = JSON.parse(versionCmd.output);
+                version = parsed.dependencies?.[pkgName]?.version || null;
+              } catch {}
+            }
+          } else if (packageManager === "pip") {
+            const versionCmd = await sandbox.executeCommand(
+              `pip show ${pkgName}`,
+              workspaceId
+            );
+            if (versionCmd.exitCode === 0 && versionCmd.output) {
+              const match = versionCmd.output.match(/^Version:\s*(.+)$/m);
+              version = match ? match[1].trim() : null;
+            }
+          } else if (packageManager === "apt") {
+            const versionCmd = await sandbox.executeCommand(
+              `apt-cache policy ${pkgName}`,
+              workspaceId
+            );
+            if (versionCmd.exitCode === 0 && versionCmd.output) {
+              const match = versionCmd.output.match(/Installed:\s*(.+)/);
+              version = match && match[1] !== "(none)" ? match[1].trim() : null;
+            }
+          }
+          
+          // Save to storage
+          const pkg = await storage.upsertPackage(workspaceId, pkgName, version, packageManager);
+          installedPackages.push(pkg);
+        } catch (error) {
+          console.error(`Failed to parse version for ${pkgName}:`, error);
+          // Still save package even if version parsing fails
+          const pkg = await storage.upsertPackage(workspaceId, pkgName, null, packageManager);
+          installedPackages.push(pkg);
+        }
+      }
+      
+      broadcastProgress(`Successfully installed ${packages.length} package(s)`);
+      res.json({ 
+        success: true, 
+        packages: installedPackages,
+        output: result.output 
+      });
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      broadcastProgress(`Installation failed: ${error.message}`);
+      res.status(500).json({ 
+        errorCode: "INTERNAL_ERROR",
+        error: error.message 
+      });
+    }
+  });
+  
+  // DELETE /api/workspaces/:id/packages/:packageId - Uninstall package
+  app.delete("/api/workspaces/:id/packages/:packageId", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const packageId = req.params.packageId;
+      
+      // Get package to delete
+      const allPackages = await storage.getPackages(workspaceId);
+      const packageToDelete = allPackages.find(p => p.id === packageId);
+      
+      if (!packageToDelete) {
+        return res.status(404).json({ 
+          errorCode: "PACKAGE_NOT_FOUND",
+          error: "Package not found in workspace" 
+        });
+      }
+      
+      // Uninstall via sandbox command
+      const uninstallCmd = packageToDelete.packageManager === "npm" 
+        ? `npm uninstall ${packageToDelete.name}`
+        : packageToDelete.packageManager === "pip"
+        ? `pip uninstall -y ${packageToDelete.name}`
+        : `apt-get remove -y ${packageToDelete.name}`;
+      
+      console.log(`[Packages] Uninstalling ${packageToDelete.name} via: ${uninstallCmd}`);
+      const result = await sandbox.executeCommand(uninstallCmd, workspaceId);
+      
+      // Check if uninstall succeeded
+      if (result.exitCode !== 0) {
+        const errorOutput = result.error || result.output || "Unknown error";
+        console.error(`[Packages] Uninstall failed:`, errorOutput);
+        
+        return res.status(400).json({ 
+          errorCode: "UNINSTALL_FAILED",
+          error: "Failed to uninstall package from sandbox",
+          details: errorOutput
+        });
+      }
+      
+      // Only remove from storage after successful sandbox uninstall
+      await storage.deletePackage(packageId);
+      
+      console.log(`[Packages] Successfully uninstalled ${packageToDelete.name}`);
+      res.json({ 
+        success: true,
+        message: `${packageToDelete.name} uninstalled successfully` 
+      });
+    } catch (error: any) {
+      console.error("[Packages] Uninstall error:", error);
+      res.status(500).json({ 
+        errorCode: "INTERNAL_ERROR",
+        error: error.message 
+      });
     }
   });
 

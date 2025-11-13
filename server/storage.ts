@@ -5,6 +5,8 @@ import {
   type File,
   type ChatMessage,
   type AgentExecution,
+  type Package,
+  type InsertPackage,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { fileSync } from "./file-sync";
@@ -45,6 +47,11 @@ export interface IStorage {
     currentNode?: string, 
     metadata?: any
   ): Promise<AgentExecution>;
+  
+  // Package methods
+  getPackages(workspaceId: string): Promise<Package[]>;
+  upsertPackage(workspaceId: string, name: string, version: string | null, packageManager: string): Promise<Package>;
+  deletePackage(id: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -53,6 +60,7 @@ export class MemStorage implements IStorage {
   private files: Map<string, File>;
   private chatMessages: Map<string, ChatMessage>;
   private agentExecutions: Map<string, AgentExecution>;
+  private packages: Map<string, Package>;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
 
@@ -62,6 +70,7 @@ export class MemStorage implements IStorage {
     this.files = new Map();
     this.chatMessages = new Map();
     this.agentExecutions = new Map();
+    this.packages = new Map();
   }
 
   /**
@@ -318,6 +327,52 @@ export class MemStorage implements IStorage {
     };
     this.agentExecutions.set(id, execution);
     return execution;
+  }
+
+  async getPackages(workspaceId: string): Promise<Package[]> {
+    return Array.from(this.packages.values()).filter(
+      (pkg) => pkg.workspaceId === workspaceId
+    );
+  }
+
+  async upsertPackage(
+    workspaceId: string,
+    name: string,
+    version: string | null,
+    packageManager: string
+  ): Promise<Package> {
+    // Check if package already exists (simulating unique constraint)
+    const existing = Array.from(this.packages.values()).find(
+      (pkg) =>
+        pkg.workspaceId === workspaceId &&
+        pkg.packageManager === packageManager &&
+        pkg.name === name
+    );
+
+    if (existing) {
+      // Update existing package
+      existing.version = version;
+      existing.installedAt = new Date();
+      this.packages.set(existing.id, existing);
+      return existing;
+    }
+
+    // Create new package
+    const id = randomUUID();
+    const pkg: Package = {
+      id,
+      workspaceId,
+      name,
+      version,
+      packageManager,
+      installedAt: new Date(),
+    };
+    this.packages.set(id, pkg);
+    return pkg;
+  }
+
+  async deletePackage(id: string): Promise<void> {
+    this.packages.delete(id);
   }
 }
 

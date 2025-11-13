@@ -44,6 +44,18 @@ export const agentExecutions = pgTable("agent_executions", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export const packages = pgTable("packages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id").notNull(),
+  name: text("name").notNull(),
+  version: text("version"),
+  packageManager: text("package_manager").notNull(), // 'npm' | 'pip' | 'apt'
+  installedAt: timestamp("installed_at").defaultNow(),
+}, (table) => ({
+  // Composite unique constraint: one package per workspace per manager
+  uniquePackage: sql`UNIQUE(${table.workspaceId}, ${table.packageManager}, ${table.name})`,
+}));
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -75,12 +87,27 @@ export const insertAgentExecutionSchema = createInsertSchema(agentExecutions).pi
   metadata: true,
 });
 
+export const insertPackageSchema = createInsertSchema(packages).pick({
+  workspaceId: true,
+  name: true,
+  version: true,
+  packageManager: true,
+});
+
+export const installPackageRequestSchema = z.object({
+  packages: z.array(z.string().min(1)).min(1),
+  packageManager: z.enum(["npm", "pip", "apt"]),
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertPackage = z.infer<typeof insertPackageSchema>;
+export type InstallPackageRequest = z.infer<typeof installPackageRequestSchema>;
 export type User = typeof users.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type File = typeof files.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type AgentExecution = typeof agentExecutions.$inferSelect;
+export type Package = typeof packages.$inferSelect;
 
 // Agent Workflow State types (from Python agent service)
 export type AgentStep = "idle" | "planning" | "coding" | "testing" | "fixing" | "complete" | "failed";
