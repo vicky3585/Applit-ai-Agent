@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import TopBar from "@/components/TopBar";
 import FileExplorer from "@/components/FileExplorer";
@@ -19,6 +19,7 @@ import { GitHubBrowserModal } from "@/components/GitHubBrowserModal";
 import { CommandPalette } from "@/components/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useIDECommands } from "@/hooks/use-ide-commands";
+import { useFilePresence } from "@/hooks/use-file-presence";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -87,6 +88,9 @@ export default function IDE() {
   
   // Package installation state
   const [packageInstallations, setPackageInstallations] = useState<any[]>([]);
+  
+  // File presence state (Task 7.8: Multiplayer presence indicators)
+  const { filePresence, handleAwarenessUpdate, clearPresenceForFile } = useFilePresence();
 
   // Fetch files
   const { data: files = [] } = useQuery<any[]>({
@@ -713,6 +717,7 @@ export default function IDE() {
         <ResizablePanel defaultSize={15} minSize={10} maxSize={25}>
           <FileExplorer
             files={fileTree}
+            filePresence={filePresence}
             onFileSelect={handleFileSelect}
             onNewFile={() => setNewFileDialogOpen(true)}
             onRenameFile={(file) => {
@@ -763,6 +768,7 @@ export default function IDE() {
                     onTabChange={setActiveTabId}
                     onTabClose={handleTabClose}
                     onContentChange={handleContentChange}
+                    onAwarenessUpdate={handleAwarenessUpdate}
                   />
                 </div>
               </TabsContent>
@@ -777,6 +783,7 @@ export default function IDE() {
                       onTabChange={setActiveTabId}
                       onTabClose={handleTabClose}
                       onContentChange={handleContentChange}
+                      onAwarenessUpdate={handleAwarenessUpdate}
                     />
                   </ResizablePanel>
                   <ResizableHandle />

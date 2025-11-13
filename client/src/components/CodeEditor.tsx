@@ -16,12 +16,19 @@ interface EditorTab {
   unsaved?: boolean;
 }
 
+interface CollaboratorPresence {
+  userId: string;
+  name: string;
+  color: string;
+}
+
 interface CodeEditorProps {
   tabs?: EditorTab[];
   activeTabId?: string;
   onTabChange?: (tabId: string) => void;
   onTabClose?: (tabId: string) => void;
   onContentChange?: (tabId: string, content: string) => void;
+  onAwarenessUpdate?: (fileName: string, users: CollaboratorPresence[]) => void; // Task 7.8
   workspaceId?: string;
   userId?: string;
   username?: string;
@@ -37,6 +44,7 @@ export default function CodeEditor({
   onTabChange,
   onTabClose,
   onContentChange,
+  onAwarenessUpdate,
   workspaceId = "default",
   userId = "user1",
   username = "Anonymous",
@@ -56,10 +64,15 @@ export default function CodeEditor({
   const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
     e.stopPropagation();
     
-    // Cleanup provider for closed tab
+    // Cleanup provider for closed tab (Task 7.8 fix: use unique file ID)
     const closedTab = tabs.find(t => t.id === tabId);
     if (closedTab) {
-      const docKey = `${workspaceId}:${closedTab.name}`;
+      // Clear presence for this file BEFORE destroying provider (Task 7.8 fix: prevent ghost indicators)
+      if (onAwarenessUpdate) {
+        onAwarenessUpdate(closedTab.id, []);
+      }
+      
+      const docKey = `${workspaceId}:${closedTab.id}`;
       const provider = providerCache.get(docKey);
       if (provider) {
         provider.awareness.setLocalState(null);
@@ -83,7 +96,7 @@ export default function CodeEditor({
   useEffect(() => {
     if (!currentTab || !editorRef.current || !monacoInstance) return;
 
-    const docKey = `${workspaceId}:${currentTab.name}`;
+    const docKey = `${workspaceId}:${currentTab.id}`; // Task 7.8 fix: use unique file ID
 
     // Clean up previous binding
     if (bindingRef.current) {
@@ -116,8 +129,8 @@ export default function CodeEditor({
       const baseUrl = `${protocol}//${window.location.host}`;
       
       // y-websocket will construct: baseUrl/roomname
-      // We use a custom roomname that encodes workspace and document info
-      const roomname = `yjs/${workspaceId}/${currentTab.name}`;
+      // We use a custom roomname that encodes workspace and unique file ID (Task 7.8 fix)
+      const roomname = `yjs/${workspaceId}/${currentTab.id}`;
       
       // Pass user info via params
       const params = {
@@ -147,6 +160,7 @@ export default function CodeEditor({
       name: username,
       color: getUserColor(userId),
       userId: userId,
+      activeFile: currentTab.id, // Task 7.8: Track active file by unique ID
     });
 
     // Monitor awareness changes for debugging (Task 7.6: User Presence System)
@@ -162,6 +176,18 @@ export default function CodeEditor({
       
       // Render cursor overlays for remote users (Task 7.7)
       renderRemoteCursors(provider);
+      
+      // Report file presence to parent (Task 7.8 - fixed to use unique file ID)
+      if (onAwarenessUpdate) {
+        const collaborators: CollaboratorPresence[] = Array.from(states.values())
+          .filter((state: any) => state.user && state.user.activeFile === currentTab.id)
+          .map((state: any) => ({
+            userId: state.user.userId,
+            name: state.user.name,
+            color: state.user.color,
+          }));
+        onAwarenessUpdate(currentTab.id, collaborators);
+      }
     };
     provider.awareness.on("change", awarenessChangeHandler);
 
@@ -205,6 +231,11 @@ export default function CodeEditor({
           decorationsRef.current.clear();
         }
         
+        // Clear file presence for this tab (Task 7.8 - using unique file ID)
+        if (onAwarenessUpdate) {
+          onAwarenessUpdate(currentTab.id, []);
+        }
+        
         // Clear awareness state for this tab's provider
         const tabProvider = providerCache.get(docKey);
         if (tabProvider) {
@@ -212,7 +243,7 @@ export default function CodeEditor({
         }
       };
     }
-  }, [currentTab?.name, editorRef.current, monacoInstance, workspaceId, userId, username, onContentChange]);
+  }, [currentTab?.id, editorRef.current, monacoInstance, workspaceId, userId, username, onContentChange]); // Task 7.8 fix: use unique file ID
 
   // Cleanup when component unmounts (user navigates away)
   useEffect(() => {

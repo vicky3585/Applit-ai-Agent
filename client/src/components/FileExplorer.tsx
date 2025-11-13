@@ -29,8 +29,17 @@ interface FileNode {
   children?: FileNode[];
 }
 
+interface CollaboratorPresence {
+  userId: string;
+  name: string;
+  color: string;
+}
+
+type FilePresenceMap = Record<string, CollaboratorPresence[]>;
+
 interface FileExplorerProps {
   files?: FileNode[];
+  filePresence?: FilePresenceMap; // Task 7.8: Show presence indicators
   onFileSelect?: (file: FileNode) => void;
   onNewFile?: () => void;
   onRenameFile?: (file: FileNode) => void;
@@ -39,6 +48,7 @@ interface FileExplorerProps {
 
 export default function FileExplorer({
   files = [],
+  filePresence = {},
   onFileSelect,
   onNewFile,
   onRenameFile,
@@ -114,6 +124,26 @@ export default function FileExplorer({
             {node.type === "file" && <div className="w-4" />}
             {getFileIcon(node)}
             <span className="text-sm flex-1 truncate">{node.name}</span>
+            
+            {/* Presence indicators - show colored dots for users viewing this file (Task 7.8 - fixed to use unique file ID) */}
+            {node.type === "file" && filePresence[node.id] && filePresence[node.id].length > 0 && (
+              <div className="flex items-center gap-0.5 ml-1" data-testid={`presence-indicators-${node.id}`}>
+                {filePresence[node.id].slice(0, 3).map((user) => (
+                  <div
+                    key={user.userId}
+                    className="w-2 h-2 rounded-full border border-background"
+                    style={{ backgroundColor: user.color }}
+                    title={user.name}
+                    data-testid={`presence-dot-${user.userId}`}
+                  />
+                ))}
+                {filePresence[node.id].length > 3 && (
+                  <span className="text-xs text-muted-foreground ml-0.5">
+                    +{filePresence[node.id].length - 3}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Action menu - only show for files */}

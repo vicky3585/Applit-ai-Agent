@@ -8,8 +8,9 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Progress
 
-**Phase 7 Multiplayer Foundation - Task 7.5 Complete (November 13, 2025):**
-✅ **Yjs Persistence Layer** - E2E tested and verified working:
+**Phase 7 Multiplayer Foundation - Tasks 7.5-7.7 Complete (November 13, 2025):**
+
+✅ **Task 7.5: Yjs Persistence Layer** - E2E tested and verified working:
 - Implemented three storage methods: `getYjsDocument`, `upsertYjsDocument`, `deleteYjsDocument`
 - MemStorage with nested Maps for workspace → docName → YjsDocument
 - Debounced auto-save (5s after last update) prevents excessive DB writes
@@ -18,6 +19,21 @@ Preferred communication style: Simple, everyday language.
 - Error handling for async persistence with `.catch()` handlers
 - **Critical fixes**: y-websocket URL construction using proper roomname pattern (`yjs/workspace/filename`) instead of query-only approach; server HTTP upgrade handler for `/yjs/*` paths instead of fixed `/yjs` path; path-based parameter extraction (workspace/docName from URL segments)
 - **E2E test verified**: WebSocket connection, auto-save after 5s, and content persistence/restoration after page reload all working correctly
+
+✅ **Task 7.6: User Presence System** - Architect approved:
+- MonacoBinding automatically handles cursor/selection tracking via Y.Awareness
+- Awareness data structure: `{ user: { name, color, userId, activeFile }, cursor: { anchor, head } }`
+- Added awareness change listeners for debugging
+- No backend changes required (canonical y-websocket protocol handles everything)
+
+✅ **Task 7.7: Colored Cursor Overlays** - Architect approved:
+- Implemented per-user colored cursor and selection rendering in Monaco editor
+- Fixed critical CSS class uniqueness bug (using `remote-cursor-${colorId}` instead of global classes)
+- Normalized anchor/head to ensure valid Monaco ranges
+- Deduplicated CSS injection via `injectedColorsRef` tracking
+- Each collaborator retains distinct cursor/selection colors (8-color palette)
+- Added hover tooltips showing username on cursors/selections
+- Proper cleanup of decorations on tab change and unmount
 
 ## System Architecture
 
