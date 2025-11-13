@@ -19,7 +19,7 @@ export interface ExecutionResult {
 export interface ISandbox {
   executeCommand(command: string, workspaceId: string): Promise<ExecutionResult>;
   executeFile(filePath: string, workspaceId: string): Promise<ExecutionResult>;
-  installPackages(packages: string[], packageManager: "npm" | "pip", workspaceId: string): Promise<ExecutionResult>;
+  installPackages(packages: string[], packageManager: "npm" | "pip" | "apt", workspaceId: string): Promise<ExecutionResult>;
 }
 
 /**
@@ -102,13 +102,15 @@ class DockerSandbox implements ISandbox {
 
   async installPackages(
     packages: string[],
-    packageManager: "npm" | "pip",
+    packageManager: "npm" | "pip" | "apt",
     workspaceId: string
   ): Promise<ExecutionResult> {
     const command =
       packageManager === "npm"
         ? `npm install ${packages.join(" ")}`
-        : `pip3 install ${packages.join(" ")}`;
+        : packageManager === "pip"
+        ? `pip3 install ${packages.join(" ")}`
+        : `apt-get install -y ${packages.join(" ")}`;
 
     return this.executeCommand(command, workspaceId);
   }
@@ -138,7 +140,7 @@ class MockSandbox implements ISandbox {
 
   async installPackages(
     packages: string[],
-    packageManager: "npm" | "pip",
+    packageManager: "npm" | "pip" | "apt",
     workspaceId: string
   ): Promise<ExecutionResult> {
     console.log(`[MockSandbox] Would install packages: ${packages.join(", ")} using ${packageManager}`);

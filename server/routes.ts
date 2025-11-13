@@ -8,6 +8,8 @@ import OpenAI from "openai";
 import { ENV_CONFIG, validateDockerAccess, validateDatabaseAccess, getServiceUrl } from "@shared/environment";
 import { installPackageRequestSchema } from "@shared/schema";
 import { templates, getTemplateById } from "./templates";
+import * as github from "./github";
+import * as git from "./git";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -727,6 +729,207 @@ export async function registerRoutes(app: Express): Promise<Server> {
         errorCode: "INTERNAL_ERROR",
         error: error.message 
       });
+    }
+  });
+
+  // ========================================
+  // GitHub & Git Routes
+  // ========================================
+
+  // GET /api/github/user - Get authenticated GitHub user
+  app.get("/api/github/user", async (_req, res) => {
+    try {
+      const user = await github.getAuthenticatedUser();
+      res.json(user);
+    } catch (error: any) {
+      console.error("[GitHub] User fetch error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/github/repos - List user repositories
+  app.get("/api/github/repos", async (req, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const perPage = parseInt(req.query.per_page as string) || 30;
+      const repos = await github.listUserRepos(page, perPage);
+      res.json(repos);
+    } catch (error: any) {
+      console.error("[GitHub] Repos fetch error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/github/repos/:owner/:repo - Get repository details
+  app.get("/api/github/repos/:owner/:repo", async (req, res) => {
+    try {
+      const { owner, repo } = req.params;
+      const repository = await github.getRepository(owner, repo);
+      res.json(repository);
+    } catch (error: any) {
+      console.error("[GitHub] Repo fetch error:", error);
+      res.status(404).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces/:id/git/clone - Clone repository
+  app.post("/api/workspaces/:id/git/clone", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const { repoUrl, branch } = req.body;
+
+      if (!repoUrl) {
+        return res.status(400).json({ error: "Repository URL is required" });
+      }
+
+      console.log(`[Git] Cloning repository: ${repoUrl}`);
+      const result = await git.cloneRepository(repoUrl, workspaceId, branch);
+
+      if (result.success) {
+        // Invalidate file cache to show new files
+        res.json({
+          success: true,
+          message: "Repository cloned successfully",
+          output: result.output,
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: result.error || "Clone failed",
+          output: result.output,
+        });
+      }
+    } catch (error: any) {
+      console.error("[Git] Clone error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/workspaces/:id/git/status - Get Git status
+  app.get("/api/workspaces/:id/git/status", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const status = await git.getGitStatus(workspaceId);
+
+      if (status) {
+        res.json(status);
+      } else {
+        res.status(404).json({ error: "Not a git repository" });
+      }
+    } catch (error: any) {
+      console.error("[Git] Status error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces/:id/git/stage - Stage files
+  app.post("/api/workspaces/:id/git/stage", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const { files = [] } = req.body;
+
+      const result = await git.stageFiles(workspaceId, files);
+
+      if (result.success) {
+        res.json({ success: true, message: "Files staged successfully" });
+      } else {
+        res.status(400).json({ error: result.error || "Stage failed" });
+      }
+    } catch (error: any) {
+      console.error("[Git] Stage error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces/:id/git/commit - Commit changes
+  app.post("/api/workspaces/:id/git/commit", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const { message, author } = req.body;
+
+      if (!message) {
+        return res.status(400).json({ error: "Commit message is required" });
+      }
+
+      const result = await git.commit(workspaceId, message, author);
+
+      if (result.success) {
+        res.json({ success: true, message: "Changes committed successfully", output: result.output });
+      } else {
+        res.status(400).json({ error: result.error || "Commit failed" });
+      }
+    } catch (error: any) {
+      console.error("[Git] Commit error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces/:id/git/push - Push commits
+  app.post("/api/workspaces/:id/git/push", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const { remote = "origin", branch } = req.body;
+
+      const result = await git.push(workspaceId, remote, branch);
+
+      if (result.success) {
+        res.json({ success: true, message: "Changes pushed successfully", output: result.output });
+      } else {
+        res.status(400).json({ error: result.error || "Push failed", output: result.output });
+      }
+    } catch (error: any) {
+      console.error("[Git] Push error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces/:id/git/pull - Pull changes
+  app.post("/api/workspaces/:id/git/pull", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const { remote = "origin", branch } = req.body;
+
+      const result = await git.pull(workspaceId, remote, branch);
+
+      if (result.success) {
+        res.json({ success: true, message: "Changes pulled successfully", output: result.output });
+      } else {
+        res.status(400).json({ error: result.error || "Pull failed", output: result.output });
+      }
+    } catch (error: any) {
+      console.error("[Git] Pull error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/workspaces/:id/git/history - Get commit history
+  app.get("/api/workspaces/:id/git/history", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const limit = parseInt(req.query.limit as string) || 10;
+
+      const history = await git.getCommitHistory(workspaceId, limit);
+      res.json(history);
+    } catch (error: any) {
+      console.error("[Git] History error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces/:id/git/init - Initialize repository
+  app.post("/api/workspaces/:id/git/init", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const result = await git.initRepository(workspaceId);
+
+      if (result.success) {
+        res.json({ success: true, message: "Repository initialized successfully" });
+      } else {
+        res.status(400).json({ error: result.error || "Init failed" });
+      }
+    } catch (error: any) {
+      console.error("[Git] Init error:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 
