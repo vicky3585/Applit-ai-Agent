@@ -85,9 +85,14 @@ export function CodeExecutionPanel({
     }
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws/${workspaceId}`;
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+
+    ws.onopen = () => {
+      // Join workspace to start receiving messages
+      ws.send(JSON.stringify({ type: "join", workspaceId }));
+    };
 
     ws.onmessage = (event) => {
       try {

@@ -168,9 +168,23 @@ class MockSandbox implements ISandbox {
 
   async executeFileWithOptions(options: ExecutionOptions): Promise<ExecutionResult> {
     console.log(`[MockSandbox] Would execute file: ${options.filePath} (hint: ${options.languageHint})`);
+    
+    // Simulate streaming output if callback provided
+    const mockOutput = `[Mock Execution] File execution logged: ${options.filePath}\n(Docker not available on Replit - deploy locally for real execution)\n`;
+    
+    if (options.onOutput) {
+      // Simulate realistic streaming by splitting into chunks
+      const chunks = mockOutput.match(/.{1,50}/g) || [mockOutput];
+      for (const chunk of chunks) {
+        options.onOutput(chunk);
+        // Small delay to simulate real execution
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    }
+    
     return {
       success: true,
-      output: `[Mock Execution] File execution logged: ${options.filePath}\n(Docker not available on Replit - deploy locally for real execution)`,
+      output: mockOutput,
       exitCode: 0,
     };
   }
