@@ -21,6 +21,19 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
   useEffect(() => {
     // Auto-detect preview URL based on environment
     detectPreviewUrl();
+    
+    // Listen for file changes that might add new HTML files
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        detectPreviewUrl();
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [workspaceId]);
 
   // Hot reload - listen for file changes via WebSocket
@@ -37,6 +50,14 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
       handleRefresh();
     });
 
+    // Listen for agent workflow completion to refresh preview URL
+    ws.on("agent_workflow", (data: any) => {
+      if (data.status === "complete" && data.files_generated?.length > 0) {
+        console.log("[PreviewPane] New files generated, refreshing preview URL");
+        detectPreviewUrl();
+      }
+    });
+
     return () => {
       ws.disconnect();
       wsRef.current = null;
@@ -48,11 +69,20 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
     setError(null);
 
     try {
-      // Check if there's a dev server running
+      // Check if there are HTML files to preview
       const response = await fetch(`/api/workspaces/${workspaceId}/preview-url`);
       
       if (response.ok) {
         const data = await response.json();
+        
+        // If HTML files are available, use the first one
+        if (data.hasHtmlFiles && data.url) {
+          setPreviewUrl(data.url);
+          setLoading(false);
+          return;
+        }
+        
+        // Otherwise use the base URL
         if (data.url) {
           setPreviewUrl(data.url);
           setLoading(false);
@@ -60,11 +90,9 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
         }
       }
 
-      // Default: try common ports
+      // Fallback: use current host
       const currentHost = window.location.host;
       const protocol = window.location.protocol;
-      
-      // In Replit, the preview URL is the same host
       setPreviewUrl(`${protocol}//${currentHost}`);
       setLoading(false);
     } catch (err) {
@@ -197,14 +225,15 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
 
         {!previewUrl && !loading && !error && (
           <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="text-center">
+            <div className="text-center max-w-md">
               <Globe className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
               <h3 className="text-lg font-medium mb-2">No Preview Available</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Generate an app with the AI agent to see a live preview here.
+                Click "Generate with AI" in the Chat tab and ask for an app (e.g., "Create a calculator app"). 
+                Your generated HTML files will appear here automatically!
               </p>
               <p className="text-xs text-muted-foreground">
-                Or enter a custom URL in the bar above.
+                Or enter a custom URL in the bar above to preview any webpage.
               </p>
             </div>
           </div>

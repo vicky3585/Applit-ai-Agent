@@ -25,6 +25,13 @@ Your task:
 4. Add helpful comments
 5. Follow best practices
 
+IMPORTANT FOR HTML/WEB APPS:
+- Generate STANDALONE HTML files with INLINE CSS and JavaScript
+- Do NOT create separate .tsx, .jsx, .css files unless explicitly requested
+- Do NOT reference external React, Vue, or framework libraries
+- Use plain HTML, inline <style> tags, and inline <script> tags
+- Make files SELF-CONTAINED and ready to run immediately in a browser
+
 Output format:
 Return a JSON object with this structure:
 {
@@ -32,15 +39,16 @@ Return a JSON object with this structure:
     {
       "path": "relative/path/to/file.ext",
       "content": "file content here",
-      "language": "javascript" // or python, typescript, etc.
+      "language": "html" // or javascript, python, etc.
     }
   ]
 }
 
 Rules:
-- Use relative paths (e.g., "src/app.js", "main.py")
-- Include all necessary files
-- Ensure code is syntactically correct
+- For web apps: Create .html files with everything inline
+- Use relative paths (e.g., "calculator.html", "todo-app.html")
+- Include all necessary code in a single file when possible
+- Ensure code is syntactically correct and runs immediately
 - Do not include explanations outside the JSON
 
 ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError}\n\nPlease fix the issue and regenerate the code.` : ""}`;

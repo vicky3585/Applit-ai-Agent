@@ -398,14 +398,81 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/workspaces/:id/preview-url", async (req, res) => {
     // Return the preview URL for the workspace
-    // In Replit, this is typically the main app URL
+    // Check if there's an HTML file to preview
+    const workspaceId = req.params.id;
+    const files = await storage.getFilesByWorkspace(workspaceId);
+    
+    // Look for HTML files
+    const htmlFiles = files.filter(f => 
+      f.path.endsWith('.html') || f.path.endsWith('.htm')
+    );
+    
     // Force HTTPS when X-Forwarded-Proto is https or when host contains replit.dev
     const host = req.get('host') || '';
     const forwardedProto = req.get('x-forwarded-proto');
     const isSecure = forwardedProto === 'https' || host.includes('replit.dev') || req.secure;
     const protocol = isSecure ? 'https' : req.protocol;
     const baseUrl = `${protocol}://${host}`;
-    res.json({ url: baseUrl });
+    
+    // If there are HTML files, suggest the first one
+    if (htmlFiles.length > 0) {
+      const firstHtml = htmlFiles[0];
+      res.json({ 
+        url: `${baseUrl}/preview/${workspaceId}/${firstHtml.path}`,
+        hasHtmlFiles: true,
+        htmlFiles: htmlFiles.map(f => ({
+          path: f.path,
+          url: `${baseUrl}/preview/${workspaceId}/${f.path}`
+        }))
+      });
+    } else {
+      res.json({ url: baseUrl, hasHtmlFiles: false });
+    }
+  });
+
+  // Serve workspace files for preview (HTML, CSS, JS, etc.)
+  app.get("/preview/:workspaceId/*", async (req, res) => {
+    try {
+      const workspaceId = req.params.workspaceId;
+      const filePath = req.params[0]; // Everything after /preview/:workspaceId/
+      
+      if (!filePath) {
+        return res.status(400).send("File path required");
+      }
+
+      // Get all files in workspace
+      const files = await storage.getFilesByWorkspace(workspaceId);
+      
+      // Find the requested file
+      const file = files.find(f => f.path === filePath);
+      
+      if (!file) {
+        return res.status(404).send(`File not found: ${filePath}`);
+      }
+
+      // Set content type based on file extension
+      const ext = filePath.split('.').pop()?.toLowerCase();
+      const contentTypes: Record<string, string> = {
+        'html': 'text/html',
+        'htm': 'text/html',
+        'css': 'text/css',
+        'js': 'application/javascript',
+        'json': 'application/json',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'svg': 'image/svg+xml',
+        'txt': 'text/plain',
+      };
+
+      const contentType = contentTypes[ext || ''] || 'application/octet-stream';
+      res.setHeader('Content-Type', contentType);
+      res.send(file.content);
+    } catch (error: any) {
+      console.error("[Preview] Error serving file:", error);
+      res.status(500).send("Error loading file");
+    }
   });
 
   app.post("/api/workspaces/:id/start-server", async (req, res) => {
