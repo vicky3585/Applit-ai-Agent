@@ -223,6 +223,12 @@ export default function IDE() {
       }
     });
 
+    ws.on("files_updated", (data: any) => {
+      // Refresh file list when agent generates new files
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+      addLog("info", `Files updated: ${data.fileCount} file(s) generated`);
+    });
+
     ws.on("chat_message", (data: any) => {
       setChatMessages((prev) => [...prev, data]);
     });

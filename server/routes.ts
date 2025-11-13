@@ -180,6 +180,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
             data: { content: latestLog + "\n" },
           }, clients);
         }
+
+        // Broadcast file updates when files are generated
+        if (state.filesGenerated && state.filesGenerated.length > 0) {
+          broadcastToWorkspace(workspaceId, {
+            type: "files_updated",
+            data: { fileCount: state.filesGenerated.length },
+          }, clients);
+        }
       });
 
       // Send appropriate final message based on workflow result
