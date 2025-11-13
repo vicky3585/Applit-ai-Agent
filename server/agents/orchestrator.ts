@@ -4,6 +4,7 @@ import { CoderAgent } from "./coder";
 import { TesterAgent } from "./tester";
 import { getFilePersistence } from "../file-persistence";
 import type { AgentWorkflowState, AgentContext } from "./types";
+import { withTimeout, TIMEOUT_CONFIGS, TimeoutError } from "../utils/timeout";
 
 export type { AgentWorkflowState, AgentContext };
 
@@ -56,7 +57,10 @@ export class AgentOrchestrator {
       state.logs.push("[Planner] Analyzing request and creating execution plan...");
       onStateUpdate({ ...state });
 
-      const plan = await this.plannerAgent.createPlan(context);
+      const plan = await withTimeout(
+        this.plannerAgent.createPlan(context),
+        TIMEOUT_CONFIGS.AGENT_PLAN
+      );
       state.plan = plan;
       state.logs.push(`[Planner] Plan created:\n${plan}`);
       state.progress = 0.3;
@@ -74,7 +78,10 @@ export class AgentOrchestrator {
         onStateUpdate({ ...state });
 
         try {
-          const codeResult = await this.coderAgent.generateCode(context, plan, lastError);
+          const codeResult = await withTimeout(
+            this.coderAgent.generateCode(context, plan, lastError),
+            TIMEOUT_CONFIGS.AGENT_CODE
+          );
           state.filesGenerated = codeResult.files;
           state.logs.push(`[Coder] Generated ${codeResult.files.length} file(s)`);
           codeResult.files.forEach((f: { path: string }) => {
@@ -105,9 +112,9 @@ export class AgentOrchestrator {
           state.logs.push("[Tester] Running validation checks...");
           onStateUpdate({ ...state });
 
-          const testResult = await this.testerAgent.validateCode(
-            context,
-            state.filesGenerated
+          const testResult = await withTimeout(
+            this.testerAgent.validateCode(context, state.filesGenerated),
+            TIMEOUT_CONFIGS.AGENT_TEST
           );
           state.testResults = testResult;
 
@@ -118,7 +125,7 @@ export class AgentOrchestrator {
             // Failed - prepare for retry
             state.currentStep = "fixing";
             state.logs.push(`[Tester] Validation failed: ${testResult.error}`);
-            lastError = testResult.error;
+            lastError = testResult.error ?? null;
             
             if (state.attemptCount < maxAttempts) {
               state.logs.push(`[Orchestrator] Retrying with fixes...`);
@@ -128,8 +135,15 @@ export class AgentOrchestrator {
             }
           }
         } catch (error: any) {
-          lastError = error.message || "Unknown error occurred";
-          state.logs.push(`[Coder] Error: ${lastError}`);
+          // Check if it's a timeout error
+          if (error instanceof TimeoutError) {
+            lastError = `Operation timed out: ${error.message}`;
+            state.logs.push(`[Coder] ⏱️ Timeout: ${lastError}`);
+            state.logs.push(`[Hint] Try simplifying your prompt or breaking it into smaller tasks`);
+          } else {
+            lastError = error.message || "Unknown error occurred";
+            state.logs.push(`[Coder] Error: ${lastError}`);
+          }
           
           // Log additional error details for debugging
           if (error.stack) {

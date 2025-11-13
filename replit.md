@@ -7,6 +7,13 @@ This project is an AI-powered Web IDE that functions as a local Replit Core clon
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (November 13, 2025)
+**Phase 6 Professional Enhancement Complete:**
+- ✅ **Backend Resilience**: Exponential backoff retry logic for all OpenAI API calls (3 attempts, 2-30s backoff, smart error detection for rate limits/timeouts/network errors)
+- ✅ **Execution Timeouts**: Per-phase timeout management (Planning: 60s, Code: 120s, Test: 60s) with timeout error handling and user hints
+- ✅ **Keyboard Shortcuts System**: Cross-platform shortcuts (Ctrl on Windows/Linux, Cmd on macOS) with focus-aware gating, 8 shortcuts including Ctrl+K (command palette), Ctrl+1-4 (view switching), Ctrl+N (new file)
+- ✅ **Command Palette**: VS Code-style command palette with custom fuzzy search (word boundaries, consecutive matches, gap penalties), 16 commands across 4 categories, keyboard navigation
+- ✅ **Fuzzy Search Library**: Custom implementation (~60 lines, zero dependencies) with scoring algorithm for relevance ranking
+
 **Phase 5.1 Authentication Foundation Complete:**
 - ✅ Database schema enhanced: users table (email, password hashing, security fields), sessions table (refresh token rotation, FK constraints, indexes)
 - ✅ Auth utilities: bcrypt password hashing, JWT signing/verification, progressive account lockout
@@ -74,6 +81,7 @@ The frontend, built with React 18, TypeScript, and Vite, uses Shadcn/ui (Radix U
 - **GitHub & Git Integration:** Implemented with argv-based execution for maximum security, eliminating shell injection risks. Supports 10 Git operations and GitHub API integration with a dedicated UI panel for status, staging, committing, pushing/pulling, and history
 - **Live Preview Pane:** Iframe-based preview system with WebSocket hot reload integration, custom URL support (with proper input handling), open-in-new-tab functionality, split-screen layout support
 - **Settings Modal:** Persistent workspace preferences including AI model selection, auto-fix configuration, and API key status display
+- **Command Palette & Shortcuts**: VS Code-style command palette (Ctrl/Cmd+K) with fuzzy search across 16 IDE commands, keyboard shortcuts with cross-platform support (Ctrl/Cmd), focus-aware gating to prevent conflicts with modals/dialogs
 
 ### System Design Choices
 The system is designed for a hybrid Node.js + Python architecture. Data storage uses dual backends: in-memory (MemStorage) for Replit environment and PostgreSQL 16 (PostgresStorage) for local Ubuntu. Both backends implement identical IStorage contract with parity enforcement.
@@ -102,8 +110,13 @@ Future plans include PostgreSQL migration with `pgvector` for embeddings, sandbo
 - WebContainer integration for browser-based Node.js execution
 - One-click deployment system
 - Streaming enhancements for agent workflow
-- Retry backoff for API calls
-- Execution timeout/cleanup for stuck executions (Replit environment)
+- Overall workflow timeout wrapper (5min total cap)
+- Cleanup on timeout (cancel orphaned operations)
+- File search functionality
+- Multi-file editing with tabs
+- Code formatting support
+- Workspace export/import
+- In-app documentation panel
 
 **Security Hardening Complete:**
 - ✅ File System: Path traversal prevention, workspace ID validation, symlink detection, parent directory validation

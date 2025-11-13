@@ -1,4 +1,5 @@
 import type { AgentContext } from "./types";
+import { withOpenAIRetry } from "../utils/retry";
 
 export interface TestResult {
   passed: boolean;
@@ -53,16 +54,18 @@ Return a JSON object:
 BE LENIENT - Only fail code that is genuinely broken. If the code will run and produce output, mark it as passed.`;
 
     try {
-      const response = await openai.chat.completions.create({
-        model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Validate this code:\n\n${filesContext}` }
-        ],
-        temperature: 0.2,
-        max_tokens: 500,
-        response_format: { type: "json_object" },
-      });
+      const response = await withOpenAIRetry(() =>
+        openai.chat.completions.create({
+          model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: `Validate this code:\n\n${filesContext}` }
+          ],
+          temperature: 0.2,
+          max_tokens: 500,
+          response_format: { type: "json_object" },
+        })
+      );
 
       const content = response.choices[0].message.content || "{}";
       const validation = JSON.parse(content);

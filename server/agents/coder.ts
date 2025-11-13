@@ -1,4 +1,5 @@
 import type { AgentContext } from "./types";
+import { withOpenAIRetry } from "../utils/retry";
 
 export interface CodeGenerationResult {
   files: Array<{
@@ -57,19 +58,21 @@ ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError
       ? `\n\nExisting files:\n${existingFiles.map(f => `- ${f.path} (${f.language})`).join("\n")}`
       : "";
 
-    const response = await openai.chat.completions.create({
-      model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: `Plan:\n${plan}\n\nUser request: ${prompt}${existingFilesContext}\n\nGenerate the code files as JSON.`
-        }
-      ],
-      temperature: 0.3,
-      max_tokens: 2000,
-      response_format: { type: "json_object" },
-    });
+    const response = await withOpenAIRetry(() =>
+      openai.chat.completions.create({
+        model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: `Plan:\n${plan}\n\nUser request: ${prompt}${existingFilesContext}\n\nGenerate the code files as JSON.`
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 2000,
+        response_format: { type: "json_object" },
+      })
+    );
 
     const content = response.choices[0].message.content || "{}";
     

@@ -16,6 +16,9 @@ import SettingsModal from "@/components/SettingsModal";
 import PackageManagerModal from "@/components/PackageManagerModal";
 import TemplateSelectorModal from "@/components/TemplateSelectorModal";
 import { GitHubBrowserModal } from "@/components/GitHubBrowserModal";
+import { CommandPalette } from "@/components/CommandPalette";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useIDECommands } from "@/hooks/use-ide-commands";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -26,6 +29,11 @@ import { WebSocketClient } from "@/lib/websocket";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { AgentWorkflowState, AgentStep } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
+import { 
+  Settings, Package, Folder, FileCode, Play, 
+  LayoutGrid, Terminal, MessageSquare, GitBranch,
+  Code, Eye, Layers, Save
+} from "lucide-react";
 
 const WORKSPACE_ID = "default-workspace";
 
@@ -52,6 +60,7 @@ export default function IDE() {
   const [packagesOpen, setPackagesOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [githubBrowserOpen, setGithubBrowserOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState("chat");
   const [editorView, setEditorView] = useState<"custom" | "code-server" | "preview" | "split">("custom");
   const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -658,6 +667,34 @@ export default function IDE() {
 
   const fileTree = buildFileTree(files);
 
+  // Command system integration
+  const { commands, shortcuts } = useIDECommands({
+    onOpenSettings: () => setSettingsOpen(true),
+    onOpenPackages: () => setPackagesOpen(true),
+    onOpenTemplates: () => setTemplatesOpen(true),
+    onOpenGitHub: () => setGithubBrowserOpen(true),
+    onNewFile: () => setNewFileDialogOpen(true),
+    onSwitchToCustomEditor: () => setEditorView("custom"),
+    onSwitchToCodeServer: () => setEditorView("code-server"),
+    onSwitchToPreview: () => setEditorView("preview"),
+    onSwitchToSplit: () => setEditorView("split"),
+    onFocusChat: () => setRightPanelTab("chat"),
+    onFocusLogs: () => setRightPanelTab("logs"),
+    onFocusAgent: () => setRightPanelTab("agent"),
+    onFocusGit: () => setRightPanelTab("git"),
+    onFocusExecution: () => setRightPanelTab("execution"),
+    onFocusPackages: () => setRightPanelTab("packages"),
+    onTogglePalette: () => setCommandPaletteOpen((prev) => !prev),
+    hasActiveFile: activeTabId !== null,
+    isGenerating,
+    canExecute: activeTabId !== null,
+  });
+
+  // Enable keyboard shortcuts (disabled when modals are open to avoid conflicts)
+  const shortcutsEnabled = !settingsOpen && !packagesOpen && !templatesOpen && 
+                           !newFileDialogOpen && !renameDialogOpen && !deleteDialogOpen;
+  useKeyboardShortcuts(shortcuts, shortcutsEnabled);
+
   return (
     <div className="h-screen flex flex-col bg-background">
       <TopBar
@@ -973,6 +1010,13 @@ export default function IDE() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Command Palette */}
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
+        commands={commands}
+      />
     </div>
   );
 }
