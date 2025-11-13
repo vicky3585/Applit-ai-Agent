@@ -6,15 +6,18 @@
  */
 
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, lt, sql } from "drizzle-orm";
 import {
   users,
+  sessions,
   workspaces,
   files,
   chatMessages,
   agentExecutions,
   type User,
   type InsertUser,
+  type Session,
+  type InsertSession,
   type Workspace,
   type File,
   type ChatMessage,
@@ -22,6 +25,9 @@ import {
 } from "@shared/schema";
 import { fileSync } from "./file-sync";
 import type { IStorage } from "./storage";
+
+// Security configuration (matching MemStorage)
+const MAX_SESSIONS_PER_USER = parseInt(process.env.MAX_SESSIONS_PER_USER || "5");
 
 export class PostgresStorage implements IStorage {
   private initialized: boolean = false;
@@ -107,6 +113,128 @@ export class PostgresStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set(updates)
+      .where(eq(users.id, id))
+      .returning();
+    return user || undefined;
+  }
+
+  // Shared helper: Enforce session cap with user-level locking
+  private async withSessionLock<T>(
+    userId: string,
+    mutation: (tx: any) => Promise<T>
+  ): Promise<T> {
+    return await db.transaction(async (tx) => {
+      // Lock user row to serialize all session operations for this user
+      await tx.execute(sql`SELECT 1 FROM ${users} WHERE id = ${userId} FOR UPDATE`);
+      
+      // Execute mutation with lock held
+      const result = await mutation(tx);
+      
+      // Re-check session count before commit (final cap enforcement)
+      const userSessions = await tx
+        .select()
+        .from(sessions)
+        .where(eq(sessions.userId, userId));
+      
+      if (userSessions.length > MAX_SESSIONS_PER_USER) {
+        throw new Error(`Maximum ${MAX_SESSIONS_PER_USER} active sessions per user exceeded`);
+      }
+      
+      return result;
+    });
+  }
+
+  // Session methods
+  async createSession(insertSession: InsertSession): Promise<Session> {
+    return this.withSessionLock(insertSession.userId, async (tx) => {
+      // Count sessions (pre-insert check)
+      const userSessions = await tx
+        .select()
+        .from(sessions)
+        .where(eq(sessions.userId, insertSession.userId));
+      
+      if (userSessions.length >= MAX_SESSIONS_PER_USER) {
+        throw new Error(`Maximum ${MAX_SESSIONS_PER_USER} active sessions per user exceeded`);
+      }
+      
+      // Insert new session
+      const [session] = await tx
+        .insert(sessions)
+        .values(insertSession)
+        .returning();
+      
+      return session;
+    });
+  }
+
+  async getSessionByTokenHash(tokenHash: string): Promise<Session | undefined> {
+    const [session] = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.refreshTokenHash, tokenHash));
+    return session || undefined;
+  }
+
+  async getSessionsByUserId(userId: string): Promise<Session[]> {
+    return await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.userId, userId));
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    await db.delete(sessions).where(eq(sessions.id, id));
+  }
+
+  async deleteUserSessions(userId: string): Promise<void> {
+    await db.delete(sessions).where(eq(sessions.userId, userId));
+  }
+
+  async rotateSession(oldSessionId: string, newSession: InsertSession): Promise<Session> {
+    return this.withSessionLock(newSession.userId, async (tx) => {
+      // Lock and verify old session exists (critical for reuse detection)
+      const oldSessionRows = await tx.execute(
+        sql`SELECT * FROM ${sessions} WHERE id = ${oldSessionId} FOR UPDATE`
+      );
+      
+      if (oldSessionRows.rows.length === 0) {
+        throw new Error("Session not found - possible token reuse detected");
+      }
+      
+      const oldSession = oldSessionRows.rows[0] as any;
+      
+      // Verify userId alignment (prevent session hijacking)
+      if (oldSession.user_id !== newSession.userId) {
+        throw new Error("Session userId mismatch - possible attack detected");
+      }
+      
+      // Delete old session
+      await tx.delete(sessions).where(eq(sessions.id, oldSessionId));
+      
+      // Insert new session (withSessionLock enforces cap on commit)
+      const [session] = await tx
+        .insert(sessions)
+        .values(newSession)
+        .returning();
+      
+      return session;
+    });
+  }
+
+  async cleanupExpiredSessions(): Promise<number> {
+    const now = new Date();
+    const deleted = await db
+      .delete(sessions)
+      .where(lt(sessions.expiresAt, now))
+      .returning();
+    
+    return deleted.length;
   }
 
   // Workspace methods

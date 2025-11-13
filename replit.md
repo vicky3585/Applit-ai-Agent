@@ -7,17 +7,23 @@ This project is an AI-powered Web IDE that functions as a local Replit Core clon
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (November 13, 2025)
-**Phase 4 Advanced Features Complete:**
+**Phase 5.1 Authentication Foundation Complete:**
+- ✅ Database schema enhanced: users table (email, password hashing, security fields), sessions table (refresh token rotation, FK constraints, indexes)
+- ✅ Auth utilities: bcrypt password hashing, JWT signing/verification, progressive account lockout
+- ✅ Authentication middleware: required + optional auth, Express.Request extension
+- ✅ **Production-grade concurrency control**: Row-level locking (SELECT FOR UPDATE) in PostgresStorage for atomic session cap enforcement
+- ✅ MemStorage + PostgresStorage parity: Both enforce MAX_SESSIONS_PER_USER=5, token reuse detection, userId verification
+- ✅ Session management: create, rotate, delete with transactional safety
+
+**Phase 4 Advanced Features:**
 - ✅ Preview Pane with iframe integration, custom URLs, open-in-new-tab
 - ✅ Split-screen layout (code editor + preview side-by-side like Replit)
-- ✅ File-to-disk persistence with security hardening (path traversal prevention, workspace ID validation)
-- ✅ Hot reload system with WebSocket notifications for file changes
-- ✅ Dev server manager for auto-detecting and running Node.js, Python, Vite, static servers
-- ✅ Enhanced AI agent robustness (better error handling, validation, troubleshooting hints)
-- ✅ Fixed shared state bug in orchestrator (per-workflow max attempts)
-- ✅ Environment-aware configuration (works in both Replit and local Ubuntu)
-- ✅ Package Installation UI - Real-time progress tracking for npm/pip/apt installations with streaming logs, status badges, and error reporting (centralized WebSocket integration)
-- ✅ Code Execution System - Enhanced mock sandbox with deterministic output (parses console.log/print from file content), real-time streaming, execution history, comprehensive debug logging
+- ✅ File-to-disk persistence with security hardening
+- ✅ Hot reload system with WebSocket notifications
+- ✅ Dev server manager for auto-detecting and running servers
+- ✅ Enhanced AI agent robustness
+- ✅ Package Installation UI with real-time progress tracking
+- ✅ Code Execution System with deterministic mock output
 
 ## System Architecture
 
@@ -26,6 +32,8 @@ The frontend, built with React 18, TypeScript, and Vite, uses Shadcn/ui (Radix U
 
 ### Technical Implementations
 **Frontend:** Utilizes TanStack Query for data fetching and Wouter for lightweight routing. WebSocket clients ensure real-time communication. Features a **PreviewPane** component with iframe integration for live app previewing.
+
+**Authentication System (Phase 5.1):** JWT-based authentication with refresh token rotation. Access tokens (15min) + refresh tokens (7 days) stored in httpOnly cookies. Session management with atomic cap enforcement (MAX_SESSIONS_PER_USER=5) using row-level locking in PostgresStorage. Progressive account lockout (3 fails=15min, 5 fails=1hr, 7+ fails=24hr). Both MemStorage (single-threaded) and PostgresStorage (row-level locks) enforce identical security contract.
 
 **Backend:** Powered by Express.js with TypeScript. A dedicated WebSocket server manages real-time features per workspace. An abstract storage layer, currently in-memory (`MemStorage`), is designed for future PostgreSQL integration via Drizzle ORM. RESTful APIs handle CRUD operations, while WebSockets manage real-time AI agent interactions.
 
@@ -68,7 +76,21 @@ The frontend, built with React 18, TypeScript, and Vite, uses Shadcn/ui (Radix U
 - **Settings Modal:** Persistent workspace preferences including AI model selection, auto-fix configuration, and API key status display
 
 ### System Design Choices
-The system is designed for a hybrid Node.js + Python architecture. Data storage will transition from in-memory to PostgreSQL 16 with `pgvector` for vector embeddings, managed by Drizzle ORM. The Docker sandbox provides container-per-workspace isolation with resource limits, activity tracking, and TTL-based cleanup. Security is a priority, with path traversal prevention, workspace ID validation, and argv-based Git execution. Future plans include multi-user support with JWT authentication, sandbox lifecycle management, dev server sandboxing (currently incomplete), and GPU integration with vLLM for local inference.
+The system is designed for a hybrid Node.js + Python architecture. Data storage uses dual backends: in-memory (MemStorage) for Replit environment and PostgreSQL 16 (PostgresStorage) for local Ubuntu. Both backends implement identical IStorage contract with parity enforcement.
+
+**Concurrency Strategy:**
+- **MemStorage**: Single-threaded JavaScript event loop inherently serializes all operations. No explicit locking needed. Session mutations (create, rotate) are atomic due to synchronous map operations.
+- **PostgresStorage**: Multi-threaded with concurrent transaction support. Uses row-level locking (SELECT FOR UPDATE) to serialize session operations per user. Both createSession and rotateSession lock the user row before counting sessions, preventing concurrent bypass of MAX_SESSIONS_PER_USER cap.
+
+**Authentication Architecture:**
+- JWT access tokens (15min) with userId + username claims
+- JWT refresh tokens (7 days) with userId + sessionId claims  
+- Refresh tokens hashed with bcrypt (10 rounds) before storage
+- Session rotation uses atomic delete-and-insert within transaction
+- Progressive lockout: 3 fails=15min, 5 fails=1hr, 7+ fails=24hr
+- Session cap: 5 sessions per user (configurable via MAX_SESSIONS_PER_USER env var)
+
+Future plans include PostgreSQL migration with `pgvector` for embeddings, sandbox lifecycle management, dev server sandboxing, and GPU integration with vLLM for local inference.
 
 ### Known Issues & Next Steps
 **Security:**
@@ -84,13 +106,17 @@ The system is designed for a hybrid Node.js + Python architecture. Data storage 
 - Execution timeout/cleanup for stuck executions (Replit environment)
 
 **Security Hardening Complete:**
-- ✅ Path traversal prevention (absolute/UNC/drive paths rejected)
-- ✅ Workspace ID validation (regex-based)
-- ✅ Symlink detection for existing paths (fs.realpath)
-- ✅ Parent directory validation (component-by-component)
-- ✅ Cross-workspace access prevention (WebSocket authentication)
-- ✅ Broadcast isolation (workspace-scoped messages)
-- ✅ Agent state isolation (no shared mutable state)
+- ✅ File System: Path traversal prevention, workspace ID validation, symlink detection, parent directory validation
+- ✅ WebSocket: Cross-workspace access prevention, broadcast isolation, agent state isolation
+- ✅ **Authentication (Phase 5.1):**
+  - ✅ Refresh token hashing before storage (DB compromise protection)
+  - ✅ Session cap enforcement with row-level locking (PostgreSQL SELECT FOR UPDATE)
+  - ✅ Token reuse detection (throws on missing session during rotation)
+  - ✅ Concurrent rotation protection (user row locking serializes operations)
+  - ✅ Session hijacking prevention (userId verification in rotateSession)
+  - ✅ Password strength validation (uppercase, lowercase, number, special char)
+  - ✅ Progressive account lockout with configurable thresholds
+  - ✅ FK cascade delete (auto-cleanup sessions on user deletion)
 
 ## External Dependencies
 

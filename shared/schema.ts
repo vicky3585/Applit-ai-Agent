@@ -6,8 +6,29 @@ import { z } from "zod";
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  email: text("email").unique(),
+  password: text("password").notNull(), // bcrypt hash
+  isActive: text("is_active").default("true").notNull(),
+  emailVerifiedAt: timestamp("email_verified_at"),
+  failedLoginCount: text("failed_login_count").default("0").notNull(),
+  lockedUntil: timestamp("locked_until"),
+  createdAt: timestamp("created_at").defaultNow(),
+  lastLoginAt: timestamp("last_login_at"),
 });
+
+export const sessions = pgTable("sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  refreshTokenHash: text("refresh_token_hash").notNull().unique(), // bcrypt hash of refresh token
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  userAgent: text("user_agent"),
+  ipAddress: text("ip_address"),
+}, (table) => ({
+  // Indexes for efficient queries
+  userIdIdx: sql`CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON ${table} (${table.userId})`,
+  expiresAtIdx: sql`CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON ${table} (${table.expiresAt})`,
+}));
 
 export const workspaces = pgTable("workspaces", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -82,9 +103,42 @@ export const workspaceSettings = pgTable("workspace_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Auth schemas with normalization and strong validation
+export const registerSchema = z.object({
+  username: z.string()
+    .min(3, "Username must be at least 3 characters")
+    .max(30, "Username must be at most 30 characters")
+    .regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, hyphens, and underscores")
+    .transform(val => val.trim().toLowerCase()),
+  email: z.string()
+    .email("Invalid email address")
+    .transform(val => val.trim().toLowerCase())
+    .optional(),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number")
+    .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
+});
+
+export const loginSchema = z.object({
+  username: z.string().transform(val => val.trim().toLowerCase()),
+  password: z.string(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
+  email: true,
   password: true,
+});
+
+export const insertSessionSchema = createInsertSchema(sessions).pick({
+  userId: true,
+  refreshTokenHash: true,
+  expiresAt: true,
+  userAgent: true,
+  ipAddress: true,
 });
 
 export const insertWorkspaceSchema = createInsertSchema(workspaces).pick({
@@ -143,12 +197,16 @@ export const installPackageRequestSchema = z.object({
   packageManager: z.enum(["npm", "pip", "apt"]),
 });
 
+export type RegisterRequest = z.infer<typeof registerSchema>;
+export type LoginRequest = z.infer<typeof loginSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertSession = z.infer<typeof insertSessionSchema>;
 export type InsertPackage = z.infer<typeof insertPackageSchema>;
 export type InstallPackageRequest = z.infer<typeof installPackageRequestSchema>;
 export type InsertWorkspaceSettings = z.infer<typeof insertWorkspaceSettingsSchema>;
 export type UpdateWorkspaceSettings = z.infer<typeof updateWorkspaceSettingsSchema>;
 export type User = typeof users.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
 export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type File = typeof files.$inferSelect;

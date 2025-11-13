@@ -1,6 +1,8 @@
 import { 
   type User, 
   type InsertUser,
+  type Session,
+  type InsertSession,
   type Workspace,
   type File,
   type ChatMessage,
@@ -14,6 +16,9 @@ import {
 import { randomUUID } from "crypto";
 import { fileSync } from "./file-sync";
 
+// Security configuration
+const MAX_SESSIONS_PER_USER = parseInt(process.env.MAX_SESSIONS_PER_USER || "5");
+
 export interface IStorage {
   // Initialization method
   initialize(): Promise<void>;
@@ -22,6 +27,16 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  
+  // Session methods
+  createSession(session: InsertSession): Promise<Session>;
+  getSessionByTokenHash(tokenHash: string): Promise<Session | undefined>;
+  getSessionsByUserId(userId: string): Promise<Session[]>;
+  deleteSession(id: string): Promise<void>;
+  deleteUserSessions(userId: string): Promise<void>;
+  rotateSession(oldSessionId: string, newSession: InsertSession): Promise<Session>;
+  cleanupExpiredSessions(): Promise<number>; // Returns count of deleted sessions
   
   // Workspace methods
   getWorkspace(id: string): Promise<Workspace | undefined>;
@@ -70,6 +85,7 @@ export interface IStorage {
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
+  private sessions: Map<string, Session>;
   private workspaces: Map<string, Workspace>;
   private files: Map<string, File>;
   private chatMessages: Map<string, ChatMessage>;
@@ -82,6 +98,7 @@ export class MemStorage implements IStorage {
 
   constructor() {
     this.users = new Map();
+    this.sessions = new Map();
     this.workspaces = new Map();
     this.files = new Map();
     this.chatMessages = new Map();
@@ -159,9 +176,115 @@ export class MemStorage implements IStorage {
 
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
-    const user: User = { ...insertUser, id };
+    const user: User = { 
+      ...insertUser, 
+      id,
+      email: insertUser.email || null,
+      isActive: "true",
+      emailVerifiedAt: null,
+      failedLoginCount: "0",
+      lockedUntil: null,
+      createdAt: new Date(),
+      lastLoginAt: null,
+    };
     this.users.set(id, user);
     return user;
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User | undefined> {
+    const user = this.users.get(id);
+    if (!user) {
+      return undefined;
+    }
+    const updated = { ...user, ...updates };
+    this.users.set(id, updated);
+    return updated;
+  }
+
+  // Session methods
+  async createSession(insertSession: InsertSession): Promise<Session> {
+    // Enforce max sessions per user
+    const userSessions = await this.getSessionsByUserId(insertSession.userId);
+    if (userSessions.length >= MAX_SESSIONS_PER_USER) {
+      throw new Error(`Maximum ${MAX_SESSIONS_PER_USER} active sessions per user exceeded`);
+    }
+    
+    const id = randomUUID();
+    const session: Session = {
+      id,
+      ...insertSession,
+      userAgent: insertSession.userAgent || null,
+      ipAddress: insertSession.ipAddress || null,
+      createdAt: new Date(),
+    };
+    this.sessions.set(id, session);
+    return session;
+  }
+
+  async getSessionByTokenHash(tokenHash: string): Promise<Session | undefined> {
+    return Array.from(this.sessions.values()).find(
+      (session) => session.refreshTokenHash === tokenHash
+    );
+  }
+
+  async getSessionsByUserId(userId: string): Promise<Session[]> {
+    return Array.from(this.sessions.values()).filter(
+      (session) => session.userId === userId
+    );
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    this.sessions.delete(id);
+  }
+
+  async deleteUserSessions(userId: string): Promise<void> {
+    Array.from(this.sessions.entries()).forEach(([id, session]) => {
+      if (session.userId === userId) {
+        this.sessions.delete(id);
+      }
+    });
+  }
+
+  async rotateSession(oldSessionId: string, newSession: InsertSession): Promise<Session> {
+    // Verify old session exists (critical for reuse detection)
+    const oldSession = this.sessions.get(oldSessionId);
+    if (!oldSession) {
+      throw new Error("Session not found - possible token reuse detected");
+    }
+    
+    // Verify userId alignment (prevent session hijacking)
+    if (oldSession.userId !== newSession.userId) {
+      throw new Error("Session userId mismatch - possible attack detected");
+    }
+    
+    // Delete old session
+    this.sessions.delete(oldSessionId);
+    
+    // Create new session (rotation replaces 1:1, no cap re-check needed)
+    const id = randomUUID();
+    const session: Session = {
+      id,
+      ...newSession,
+      userAgent: newSession.userAgent || null,
+      ipAddress: newSession.ipAddress || null,
+      createdAt: new Date(),
+    };
+    this.sessions.set(id, session);
+    return session;
+  }
+
+  async cleanupExpiredSessions(): Promise<number> {
+    const now = new Date();
+    let count = 0;
+    
+    Array.from(this.sessions.entries()).forEach(([id, session]) => {
+      if (session.expiresAt < now) {
+        this.sessions.delete(id);
+        count++;
+      }
+    });
+    
+    return count;
   }
 
   async getWorkspace(id: string): Promise<Workspace | undefined> {
