@@ -7,6 +7,7 @@ import { sandbox } from "./sandbox";
 import OpenAI from "openai";
 import { ENV_CONFIG, validateDockerAccess, validateDatabaseAccess, getServiceUrl } from "@shared/environment";
 import { installPackageRequestSchema } from "@shared/schema";
+import { templates, getTemplateById } from "./templates";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -558,6 +559,170 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error: any) {
       console.error("[Packages] Uninstall error:", error);
+      res.status(500).json({ 
+        errorCode: "INTERNAL_ERROR",
+        error: error.message 
+      });
+    }
+  });
+
+  // GET /api/templates - List all available templates
+  app.get("/api/templates", (_req, res) => {
+    try {
+      // Return templates without full file content for listing
+      const templateList = templates.map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
+        category: t.category,
+        language: t.language,
+        framework: t.framework,
+        icon: t.icon,
+        devCommand: t.devCommand,
+        buildCommand: t.buildCommand,
+      }));
+      res.json(templateList);
+    } catch (error: any) {
+      console.error("[Templates] List error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces/:id/apply-template - Apply template to workspace
+  app.post("/api/workspaces/:id/apply-template", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const { templateId } = req.body;
+
+      if (!templateId) {
+        return res.status(400).json({ 
+          errorCode: "INVALID_REQUEST",
+          error: "Template ID is required" 
+        });
+      }
+
+      const template = getTemplateById(templateId);
+      if (!template) {
+        return res.status(404).json({ 
+          errorCode: "TEMPLATE_NOT_FOUND",
+          error: "Template not found" 
+        });
+      }
+
+      console.log(`[Templates] Applying template ${template.name} to workspace ${workspaceId}`);
+
+      // Create all template files
+      const createdFiles = [];
+      for (const templateFile of template.files) {
+        const file = await storage.createFile(
+          workspaceId,
+          templateFile.path,
+          templateFile.content,
+          templateFile.language
+        );
+        createdFiles.push(file);
+      }
+
+      console.log(`[Templates] Created ${createdFiles.length} files`);
+
+      // Broadcast progress via WebSocket
+      const wsClients = connections.get(workspaceId);
+      const broadcastProgress = (message: string) => {
+        if (wsClients) {
+          wsClients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify({
+                type: "template_progress",
+                message,
+              }));
+            }
+          });
+        }
+      };
+
+      // Install packages if specified
+      if (template.packages) {
+        if (template.packages.npm && template.packages.npm.length > 0) {
+          broadcastProgress(`Installing npm packages: ${template.packages.npm.join(", ")}`);
+          try {
+            const result = await sandbox.installPackages(template.packages.npm, "npm", workspaceId);
+            if (result.exitCode === 0) {
+              console.log(`[Templates] npm packages installed successfully`);
+              broadcastProgress("npm packages installed successfully");
+              
+              // Save packages to storage
+              for (const pkgName of template.packages.npm) {
+                await storage.upsertPackage(workspaceId, pkgName, null, "npm");
+              }
+            } else {
+              console.error(`[Templates] npm install failed:`, result.error || result.output);
+              broadcastProgress(`Warning: npm install failed - ${result.error || "unknown error"}`);
+            }
+          } catch (error: any) {
+            console.error(`[Templates] npm install error:`, error);
+            broadcastProgress(`Warning: npm install error - ${error.message}`);
+          }
+        }
+
+        if (template.packages.pip && template.packages.pip.length > 0) {
+          broadcastProgress(`Installing pip packages: ${template.packages.pip.join(", ")}`);
+          try {
+            const result = await sandbox.installPackages(template.packages.pip, "pip", workspaceId);
+            if (result.exitCode === 0) {
+              console.log(`[Templates] pip packages installed successfully`);
+              broadcastProgress("pip packages installed successfully");
+              
+              // Save packages to storage
+              for (const pkgName of template.packages.pip) {
+                await storage.upsertPackage(workspaceId, pkgName, null, "pip");
+              }
+            } else {
+              console.error(`[Templates] pip install failed:`, result.error || result.output);
+              broadcastProgress(`Warning: pip install failed - ${result.error || "unknown error"}`);
+            }
+          } catch (error: any) {
+            console.error(`[Templates] pip install error:`, error);
+            broadcastProgress(`Warning: pip install error - ${error.message}`);
+          }
+        }
+
+        if (template.packages.apt && template.packages.apt.length > 0) {
+          broadcastProgress(`Installing apt packages: ${template.packages.apt.join(", ")}`);
+          try {
+            const result = await sandbox.installPackages(template.packages.apt, "apt", workspaceId);
+            if (result.exitCode === 0) {
+              console.log(`[Templates] apt packages installed successfully`);
+              broadcastProgress("apt packages installed successfully");
+              
+              // Save packages to storage
+              for (const pkgName of template.packages.apt) {
+                await storage.upsertPackage(workspaceId, pkgName, null, "apt");
+              }
+            } else {
+              console.error(`[Templates] apt install failed:`, result.error || result.output);
+              broadcastProgress(`Warning: apt install failed - ${result.error || "unknown error"}`);
+            }
+          } catch (error: any) {
+            console.error(`[Templates] apt install error:`, error);
+            broadcastProgress(`Warning: apt install error - ${error.message}`);
+          }
+        }
+      }
+
+      broadcastProgress("Template applied successfully!");
+
+      res.json({
+        success: true,
+        template: {
+          id: template.id,
+          name: template.name,
+        },
+        filesCreated: createdFiles.length,
+        devCommand: template.devCommand,
+        buildCommand: template.buildCommand,
+      });
+    } catch (error: any) {
+      console.error("[Templates] Apply error:", error);
       res.status(500).json({ 
         errorCode: "INTERNAL_ERROR",
         error: error.message 

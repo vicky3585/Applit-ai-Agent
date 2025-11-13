@@ -11,6 +11,7 @@ import AgentStatePanel from "@/components/AgentStatePanel";
 import LogsPanel from "@/components/LogsPanel";
 import SettingsModal from "@/components/SettingsModal";
 import PackageManagerModal from "@/components/PackageManagerModal";
+import TemplateSelectorModal from "@/components/TemplateSelectorModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -45,6 +46,7 @@ export default function IDE() {
   const [agentStatus, setAgentStatus] = useState<AgentStep>("idle");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [packagesOpen, setPackagesOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState("chat");
   const [editorView, setEditorView] = useState<"custom" | "code-server" | "preview">("custom");
   const [chatMessages, setChatMessages] = useState<any[]>([]);
@@ -547,6 +549,7 @@ export default function IDE() {
         onRunAgent={() => console.log("Run agent")}
         onPauseAgent={() => console.log("Pause agent")}
         onResetAgent={() => console.log("Reset agent")}
+        onTemplates={() => setTemplatesOpen(true)}
         onPackages={() => setPackagesOpen(true)}
         onSettings={() => setSettingsOpen(true)}
       />
@@ -667,6 +670,12 @@ export default function IDE() {
       </ResizablePanelGroup>
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <TemplateSelectorModal 
+        open={templatesOpen} 
+        onClose={() => setTemplatesOpen(false)}
+        workspaceId={WORKSPACE_ID}
+      />
+
       <PackageManagerModal 
         open={packagesOpen} 
         onClose={() => setPackagesOpen(false)}
