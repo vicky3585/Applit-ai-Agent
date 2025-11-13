@@ -224,14 +224,15 @@ export async function commit(
   author?: { name: string; email: string }
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    // Validate message (spaces and quotes allowed, will be escaped)
-    const escapedMessage = validateAndEscapeGitArg(message, true, true).replace(/"/g, '\\"');
+    // For Phase 4: Reject quotes entirely to prevent argument injection
+    // Phase 5 will use argv-based execution to allow all legitimate characters
+    const escapedMessage = validateAndEscapeGitArg(message, true, false);
     
     let cmd = `git commit -m "${escapedMessage}"`;
     
     if (author) {
-      // Validate author info (spaces allowed in names, quotes rejected in emails)
-      const escapedName = validateAndEscapeGitArg(author.name, true, true).replace(/"/g, '\\"');
+      // Validate author info (quotes rejected to prevent injection)
+      const escapedName = validateAndEscapeGitArg(author.name, true, false);
       const escapedEmail = validateAndEscapeGitArg(author.email, false, false);
       cmd = `git -c user.name="${escapedName}" -c user.email="${escapedEmail}" ${cmd}`;
     }

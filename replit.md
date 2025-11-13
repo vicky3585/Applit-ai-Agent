@@ -119,11 +119,17 @@ The system integrates with the OpenAI API for GPT-powered coding assistance. AI 
 - Numeric parameter safety (commit history limit clamping)
 
 **Known Limitations (Phase 5)**:
-- Validation rejects parentheses, braces, brackets, dollar signs (breaks "feat(scope)" style commits)
-- Shell-string interpolation used (not argv-based execution)
-- Clone operation writes to current workspace directory without checking if empty
-- Filenames with quotes not supported
-- Phase 5 will migrate to array-based exec APIs for production-ready Git integration
+- **Input Validation Too Strict**: Current validation rejects many legitimate characters to prevent command/argument injection:
+  - Parentheses, braces, brackets (breaks "feat(scope):" style commits)
+  - Dollar signs, quotes in commit messages
+  - Quotes in filenames
+  - This is an intentional security trade-off for Phase 4 prototype
+- **Shell-String Execution**: Uses string interpolation instead of argv-based execution
+- **Workspace Isolation**: Clone operation writes to current workspace directory without checking if empty
+- **Phase 5 Solution**: Complete rewrite using argv-based sandbox execution (spawn/execFile) will:
+  - Eliminate shell parsing and injection risks entirely
+  - Allow all legitimate Git inputs (parentheses, quotes, special chars)
+  - Provide production-grade security without functionality trade-offs
 
 ## External Dependencies
 
