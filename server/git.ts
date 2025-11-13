@@ -25,42 +25,15 @@ export interface GitCommitInfo {
 }
 
 /**
- * Validate and escape Git command arguments to prevent command injection
- * 
- * KNOWN LIMITATION (Phase 5 improvement):
- * This function uses string escaping + shell quoting. For maximum safety,
- * Phase 5 will migrate to array-based exec APIs (e.g., spawn with argv array)
- * to eliminate shell parsing entirely.
- * 
- * Current approach: Reject most dangerous chars, allow legitimate ones with escaping
+ * Basic input validation for Git commands
+ * With argv-based execution, we only need to reject control characters
+ * All other characters (parentheses, quotes, etc.) are safe
  */
-function validateAndEscapeGitArg(arg: string, allowSpaces: boolean = true, allowQuotes: boolean = false): string {
-  // Reject inputs with HIGH-RISK shell metacharacters
-  const dangerousChars = /[;&|`$(){}[\]<>\\]/;
-  if (dangerousChars.test(arg)) {
-    throw new Error(`Invalid input: contains dangerous shell metacharacters`);
-  }
-  
-  // Reject control characters and newlines
-  if (/[\x00-\x1F\x7F]/.test(arg)) {
+function validateGitInput(input: string): void {
+  // Reject control characters and null bytes (these are never valid in Git inputs)
+  if (/[\x00-\x1F\x7F]/.test(input)) {
     throw new Error(`Invalid input: contains control characters`);
   }
-  
-  // If spaces not allowed (e.g., for remote names, branch names), reject them
-  if (!allowSpaces && /\s/.test(arg)) {
-    throw new Error(`Invalid input: spaces not allowed in this context`);
-  }
-  
-  // Escape quotes if present (for commit messages, author names)
-  let escaped = arg;
-  if (!allowQuotes && /['"]/.test(arg)) {
-    throw new Error(`Invalid input: quotes not allowed in this context`);
-  }
-  
-  // Escape special chars for shell safety (defense in depth)
-  escaped = escaped.replace(/\$/g, '\\$').replace(/`/g, '\\`');
-  
-  return escaped;
 }
 
 /**
@@ -73,7 +46,7 @@ export async function cloneRepository(
   branch?: string
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    // Validate URL format first
+    // Validate URL format
     if (!repoUrl.match(/^https?:\/\//i) && !repoUrl.match(/^git@/)) {
       return {
         success: false,
@@ -82,16 +55,17 @@ export async function cloneRepository(
       };
     }
     
-    // Validate and escape inputs to prevent command injection (URLs allow spaces, branches don't allow spaces/quotes)
-    const escapedUrl = validateAndEscapeGitArg(repoUrl, true, false);
-    const escapedBranch = branch ? validateAndEscapeGitArg(branch, false, false) : undefined;
+    // Validate inputs (only reject control characters)
+    validateGitInput(repoUrl);
+    if (branch) validateGitInput(branch);
     
-    const cmd = escapedBranch 
-      ? `git clone --branch "${escapedBranch}" "${escapedUrl}" .`
-      : `git clone "${escapedUrl}" .`;
+    // Build argv array - NO SHELL PARSING, all special chars are safe
+    const argv = branch
+      ? ["git", "clone", "--branch", branch, repoUrl, "."]
+      : ["git", "clone", repoUrl, "."];
     
-    console.log(`[Git] Cloning repository: ${escapedUrl}`);
-    const result = await sandbox.executeCommand(cmd, workspaceId);
+    console.log(`[Git] Cloning repository: ${repoUrl}`);
+    const result = await sandbox.executeCommandArgv(argv, workspaceId);
     
     if (result.exitCode === 0) {
       console.log(`[Git] Repository cloned successfully`);
@@ -123,22 +97,22 @@ export async function cloneRepository(
 export async function getGitStatus(workspaceId: string): Promise<GitStatus | null> {
   try {
     // Get current branch
-    const branchResult = await sandbox.executeCommand(
-      "git rev-parse --abbrev-ref HEAD",
+    const branchResult = await sandbox.executeCommandArgv(
+      ["git", "rev-parse", "--abbrev-ref", "HEAD"],
       workspaceId
     );
     const branch = branchResult.exitCode === 0 ? branchResult.output.trim() : "main";
 
-    // Get ahead/behind counts
-    const aheadBehindResult = await sandbox.executeCommand(
-      "git rev-list --left-right --count @{u}...HEAD 2>/dev/null || echo '0\t0'",
+    // Get ahead/behind counts (fallback to 0,0 if no upstream)
+    const aheadBehindResult = await sandbox.executeCommandArgv(
+      ["sh", "-c", "git rev-list --left-right --count @{u}...HEAD 2>/dev/null || echo '0\t0'"],
       workspaceId
     );
     const [behind, ahead] = aheadBehindResult.output.trim().split(/\s+/).map(Number);
 
     // Get staged files
-    const stagedResult = await sandbox.executeCommand(
-      "git diff --cached --name-only",
+    const stagedResult = await sandbox.executeCommandArgv(
+      ["git", "diff", "--cached", "--name-only"],
       workspaceId
     );
     const staged = stagedResult.exitCode === 0 
@@ -146,8 +120,8 @@ export async function getGitStatus(workspaceId: string): Promise<GitStatus | nul
       : [];
 
     // Get modified files
-    const modifiedResult = await sandbox.executeCommand(
-      "git diff --name-only",
+    const modifiedResult = await sandbox.executeCommandArgv(
+      ["git", "diff", "--name-only"],
       workspaceId
     );
     const modified = modifiedResult.exitCode === 0
@@ -155,8 +129,8 @@ export async function getGitStatus(workspaceId: string): Promise<GitStatus | nul
       : [];
 
     // Get untracked files
-    const untrackedResult = await sandbox.executeCommand(
-      "git ls-files --others --exclude-standard",
+    const untrackedResult = await sandbox.executeCommandArgv(
+      ["git", "ls-files", "--others", "--exclude-standard"],
       workspaceId
     );
     const untracked = untrackedResult.exitCode === 0
@@ -188,18 +162,15 @@ export async function stageFiles(
   files: string[]
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    // Validate file paths to prevent command injection (spaces allowed, quotes rejected)
-    const escapedFiles = files.map(f => validateAndEscapeGitArg(f, true, false));
+    // Validate file paths (only reject control characters)
+    files.forEach(f => validateGitInput(f));
     
-    // Stage all if empty array, otherwise stage individual files with proper quoting
-    const filesArg = escapedFiles.length === 0 
-      ? "." 
-      : escapedFiles.map(f => `"${f}"`).join(" ");
+    // Build argv array - all file paths are safe, including those with spaces, quotes, etc.
+    const argv = files.length === 0
+      ? ["git", "add", "."]
+      : ["git", "add", ...files];
       
-    const result = await sandbox.executeCommand(
-      `git add ${filesArg}`,
-      workspaceId
-    );
+    const result = await sandbox.executeCommandArgv(argv, workspaceId);
     
     return {
       success: result.exitCode === 0,
@@ -224,20 +195,28 @@ export async function commit(
   author?: { name: string; email: string }
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    // For Phase 4: Reject quotes entirely to prevent argument injection
-    // Phase 5 will use argv-based execution to allow all legitimate characters
-    const escapedMessage = validateAndEscapeGitArg(message, true, false);
-    
-    let cmd = `git commit -m "${escapedMessage}"`;
-    
+    // Validate inputs (only reject control characters)
+    validateGitInput(message);
     if (author) {
-      // Validate author info (quotes rejected to prevent injection)
-      const escapedName = validateAndEscapeGitArg(author.name, true, false);
-      const escapedEmail = validateAndEscapeGitArg(author.email, false, false);
-      cmd = `git -c user.name="${escapedName}" -c user.email="${escapedEmail}" ${cmd}`;
+      validateGitInput(author.name);
+      validateGitInput(author.email);
     }
     
-    const result = await sandbox.executeCommand(cmd, workspaceId);
+    // Build argv array - ALL characters including quotes, parentheses, etc. are now safe!
+    let argv: string[];
+    if (author) {
+      argv = [
+        "git",
+        "-c", `user.name=${author.name}`,
+        "-c", `user.email=${author.email}`,
+        "commit",
+        "-m", message
+      ];
+    } else {
+      argv = ["git", "commit", "-m", message];
+    }
+    
+    const result = await sandbox.executeCommandArgv(argv, workspaceId);
     
     return {
       success: result.exitCode === 0,
@@ -262,15 +241,16 @@ export async function push(
   branch?: string
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    // Validate remote and branch names (no spaces/quotes allowed)
-    const escapedRemote = validateAndEscapeGitArg(remote, false, false);
-    const escapedBranch = branch ? validateAndEscapeGitArg(branch, false, false) : undefined;
+    // Validate inputs (only reject control characters)
+    validateGitInput(remote);
+    if (branch) validateGitInput(branch);
     
-    const cmd = escapedBranch 
-      ? `git push "${escapedRemote}" "${escapedBranch}"`
-      : `git push "${escapedRemote}"`;
+    // Build argv array
+    const argv = branch
+      ? ["git", "push", remote, branch]
+      : ["git", "push", remote];
     
-    const result = await sandbox.executeCommand(cmd, workspaceId);
+    const result = await sandbox.executeCommandArgv(argv, workspaceId);
     
     return {
       success: result.exitCode === 0,
@@ -295,15 +275,16 @@ export async function pull(
   branch?: string
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    // Validate remote and branch names (no spaces/quotes allowed)
-    const escapedRemote = validateAndEscapeGitArg(remote, false, false);
-    const escapedBranch = branch ? validateAndEscapeGitArg(branch, false, false) : undefined;
+    // Validate inputs (only reject control characters)
+    validateGitInput(remote);
+    if (branch) validateGitInput(branch);
     
-    const cmd = escapedBranch 
-      ? `git pull "${escapedRemote}" "${escapedBranch}"`
-      : `git pull "${escapedRemote}"`;
+    // Build argv array
+    const argv = branch
+      ? ["git", "pull", remote, branch]
+      : ["git", "pull", remote];
     
-    const result = await sandbox.executeCommand(cmd, workspaceId);
+    const result = await sandbox.executeCommandArgv(argv, workspaceId);
     
     return {
       success: result.exitCode === 0,
@@ -330,10 +311,14 @@ export async function getCommitHistory(
     // Validate limit is a safe positive integer
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
     
-    const result = await sandbox.executeCommand(
-      `git log --pretty=format:'%H|%an|%ai|%s' -n ${safeLimit}`,
-      workspaceId
-    );
+    // Build argv array with validated limit
+    const argv = [
+      "git", "log",
+      "--pretty=format:%H|%an|%ai|%s",
+      "-n", safeLimit.toString()
+    ];
+    
+    const result = await sandbox.executeCommandArgv(argv, workspaceId);
     
     if (result.exitCode !== 0) {
       return [];
@@ -359,7 +344,7 @@ export async function initRepository(
   workspaceId: string
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    const result = await sandbox.executeCommand("git init", workspaceId);
+    const result = await sandbox.executeCommandArgv(["git", "init"], workspaceId);
     
     return {
       success: result.exitCode === 0,
@@ -384,7 +369,7 @@ export async function setRemote(
   name = "origin"
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    // Validate URL format first
+    // Validate URL format
     if (!url.match(/^https?:\/\//i) && !url.match(/^git@/)) {
       return {
         success: false,
@@ -393,21 +378,22 @@ export async function setRemote(
       };
     }
     
-    // Validate and escape inputs (URLs allow spaces, remote names don't allow spaces/quotes)
-    const escapedUrl = validateAndEscapeGitArg(url, true, false);
-    const escapedName = validateAndEscapeGitArg(name, false, false);
+    // Validate inputs (only reject control characters)
+    validateGitInput(url);
+    validateGitInput(name);
     
     // Check if remote exists
-    const checkResult = await sandbox.executeCommand(
-      `git remote get-url "${escapedName}"`,
+    const checkResult = await sandbox.executeCommandArgv(
+      ["git", "remote", "get-url", name],
       workspaceId
     );
     
-    const cmd = checkResult.exitCode === 0
-      ? `git remote set-url "${escapedName}" "${escapedUrl}"`
-      : `git remote add "${escapedName}" "${escapedUrl}"`;
+    // Build argv based on whether remote exists
+    const argv = checkResult.exitCode === 0
+      ? ["git", "remote", "set-url", name, url]
+      : ["git", "remote", "add", name, url];
     
-    const result = await sandbox.executeCommand(cmd, workspaceId);
+    const result = await sandbox.executeCommandArgv(argv, workspaceId);
     
     return {
       success: result.exitCode === 0,
