@@ -5,7 +5,7 @@ import { createProxyMiddleware } from "http-proxy-middleware";
 import { storage } from "./storage-factory";
 import { sandbox } from "./sandbox";
 import OpenAI from "openai";
-import { ENV_CONFIG, validateDockerAccess, validateDatabaseAccess } from "@shared/environment";
+import { ENV_CONFIG, validateDockerAccess, validateDatabaseAccess, getServiceUrl } from "@shared/environment";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -281,6 +281,68 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/workspaces/:id/agent", async (req, res) => {
     const execution = await storage.getAgentExecution(req.params.id);
     res.json(execution || { status: "idle" });
+  });
+
+  // Python Agent - Code generation endpoint
+  app.post("/api/workspaces/:id/agent/generate", async (req, res) => {
+    const { prompt } = req.body;
+    if (!prompt) {
+      return res.status(400).json({ error: "Prompt is required" });
+    }
+
+    // Check if Python agent is available
+    const pythonAgentUrl = getServiceUrl("python-agent");
+    if (!pythonAgentUrl) {
+      return res.status(503).json({ 
+        error: "Python agent service not available",
+        message: "Python agent requires local Docker environment"
+      });
+    }
+
+    try {
+      // Get existing files for context
+      const files = await storage.getFilesByWorkspace(req.params.id);
+      
+      // Call Python agent service
+      const response = await fetch(`${pythonAgentUrl}/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt,
+          workspace_id: req.params.id,
+          existing_files: files.map(f => ({
+            path: f.path,
+            language: f.language,
+            content: f.content // ✅ Full content, no truncation
+          })),
+          context: {}
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Python agent error: ${error}`);
+      }
+
+      const result = await response.json();
+      
+      // Create files returned by agent
+      if (result.files_generated && result.files_generated.length > 0) {
+        for (const file of result.files_generated) {
+          await storage.createFile(
+            req.params.id,
+            file.path,
+            file.content,
+            file.language || "plaintext"
+          );
+        }
+      }
+
+      res.json(result);
+    } catch (error: any) {
+      console.error("[Agent] Generation error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // Terminal execution endpoints

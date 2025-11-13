@@ -21,6 +21,11 @@ export interface EnvironmentConfig {
     mode: ServiceMode;
     url: string;
   };
+  pythonAgent: {
+    mode: ServiceMode;
+    url: string;
+    available: boolean;
+  };
   ai: {
     provider: "openai" | "vllm" | "hybrid";
     vllmAvailable: boolean;
@@ -70,6 +75,11 @@ export function getEnvironmentConfig(): EnvironmentConfig {
         mode: "mock", // Use our existing custom editor on Replit
         url: "",
       },
+      pythonAgent: {
+        mode: "mock", // Python agent not available on Replit
+        url: "",
+        available: false,
+      },
       ai: {
         provider: "openai", // OpenAI only on Replit
         vllmAvailable: false,
@@ -95,6 +105,11 @@ export function getEnvironmentConfig(): EnvironmentConfig {
     codeServer: {
       mode: "docker",
       url: process.env.CODE_SERVER_URL || "http://localhost:8443",
+    },
+    pythonAgent: {
+      mode: "docker",
+      url: process.env.PYTHON_AGENT_URL || "http://localhost:8001",
+      available: true,
     },
     ai: {
       provider: process.env.AI_PROVIDER as any || "hybrid",
@@ -167,12 +182,14 @@ export function isServiceAvailable(service: "docker" | "gpu" | "vllm" | "code-se
 /**
  * Get service URL with environment-aware fallback
  */
-export function getServiceUrl(service: "code-server" | "vllm" | "sandbox"): string | null {
+export function getServiceUrl(service: "code-server" | "vllm" | "sandbox" | "python-agent"): string | null {
   const config = getEnvironmentConfig();
   
   switch (service) {
     case "code-server":
       return config.codeServer.mode === "docker" ? config.codeServer.url : null;
+    case "python-agent":
+      return config.pythonAgent.available ? config.pythonAgent.url : null;
     case "vllm":
       return config.ai.vllmAvailable ? (process.env.VLLM_API_BASE || null) : null;
     case "sandbox":
@@ -189,5 +206,6 @@ console.log(`[Environment] Running on: ${ENV_CONFIG.env}`);
 console.log(`[Environment] Database: ${ENV_CONFIG.database.mode}`);
 console.log(`[Environment] Sandbox: ${ENV_CONFIG.sandbox.mode} (available: ${ENV_CONFIG.sandbox.available})`);
 console.log(`[Environment] Code Server: ${ENV_CONFIG.codeServer.mode}`);
+console.log(`[Environment] Python Agent: ${ENV_CONFIG.pythonAgent.mode} (available: ${ENV_CONFIG.pythonAgent.available})`);
 console.log(`[Environment] AI Provider: ${ENV_CONFIG.ai.provider}`);
 console.log(`[Environment] GPU: ${ENV_CONFIG.gpu.available ? `Yes (${ENV_CONFIG.gpu.device})` : "No"}`);

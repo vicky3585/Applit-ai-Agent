@@ -64,6 +64,25 @@ services:
       - workspace_files:/workspace
     command: /bin/bash -c "apt-get update && apt-get install -y python3 python3-pip nodejs npm && tail -f /dev/null"
 
+  # Python Agent Service (LangGraph multi-agent orchestration)
+  python-agent:
+    build:
+      context: ./python-agent
+      dockerfile: Dockerfile
+    container_name: webide_python_agent
+    ports:
+      - "8001:8001"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AGENT_PORT=8001
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/webide
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # API Server (Node.js/Express backend)
   api:
     build:
