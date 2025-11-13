@@ -78,14 +78,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const workspaceConnections = connections.get(data.workspaceId);
           
           try {
-            // Execute command and stream output
-            const result = await sandbox.executeCommand(data.command, data.workspaceId);
-            
-            // Broadcast output
-            broadcastToWorkspace(data.workspaceId, {
-              type: "terminal_output",
-              data: { chunk: result.output },
-            }, workspaceConnections);
+            // Execute command with streaming output
+            const result = await sandbox.executeCommandWithOptions({
+              workspaceId: data.workspaceId,
+              command: data.command,
+              onOutput: (chunk: string) => {
+                // Broadcast each output chunk in real-time
+                broadcastToWorkspace(data.workspaceId, {
+                  type: "terminal_output",
+                  data: { chunk },
+                }, workspaceConnections);
+              },
+            });
             
             // Broadcast completion
             broadcastToWorkspace(data.workspaceId, {

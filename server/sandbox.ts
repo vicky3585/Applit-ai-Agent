@@ -19,8 +19,16 @@ export interface ExecutionResult {
   exitCode?: number;
 }
 
+export interface CommandExecutionOptions {
+  workspaceId: string;
+  command: string;
+  onOutput?: (chunk: string) => void;
+  timeout?: number;
+}
+
 export interface ISandbox {
   executeCommand(command: string, workspaceId: string): Promise<ExecutionResult>;
+  executeCommandWithOptions(options: CommandExecutionOptions): Promise<ExecutionResult>;
   executeCommandArgv(argv: string[], workspaceId: string): Promise<ExecutionResult>;
   executeFile(filePath: string, workspaceId: string, languageHint?: string): Promise<ExecutionResult>;
   executeFileWithOptions(options: ExecutionOptions): Promise<ExecutionResult>;
@@ -46,6 +54,16 @@ class DockerSandbox implements ISandbox {
   async executeCommand(command: string, workspaceId: string): Promise<ExecutionResult> {
     // Use bash -c for shell command execution
     return this.manager.executeInContainer(workspaceId, ["/bin/bash", "-c", command]);
+  }
+
+  async executeCommandWithOptions(options: CommandExecutionOptions): Promise<ExecutionResult> {
+    // Execute command with streaming support via onOutput callback
+    return this.manager.executeInContainer(
+      options.workspaceId,
+      ["/bin/bash", "-c", options.command],
+      "fullstack",
+      options.onOutput
+    );
   }
 
   async executeCommandArgv(argv: string[], workspaceId: string): Promise<ExecutionResult> {
@@ -145,6 +163,29 @@ class MockSandbox implements ISandbox {
     return {
       success: true,
       output: `[Mock Execution] Command logged: ${command}\n(Docker not available on Replit - deploy locally for real execution)`,
+      exitCode: 0,
+    };
+  }
+
+  async executeCommandWithOptions(options: CommandExecutionOptions): Promise<ExecutionResult> {
+    console.log(`[MockSandbox] Would execute command: ${options.command}`);
+    
+    // Simulate streaming output if callback provided
+    const mockOutput = `[Mock Execution] Command logged: ${options.command}\n(Docker not available on Replit - deploy locally for real execution)\n`;
+    
+    if (options.onOutput) {
+      // Simulate realistic streaming by splitting into chunks
+      const chunks = mockOutput.match(/.{1,30}/g) || [mockOutput];
+      for (const chunk of chunks) {
+        options.onOutput(chunk);
+        // Small delay to simulate real execution (200ms like code execution)
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    
+    return {
+      success: true,
+      output: mockOutput,
       exitCode: 0,
     };
   }

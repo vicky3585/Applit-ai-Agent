@@ -237,6 +237,53 @@ export default function IDE() {
       setIsStreaming(false);
     });
 
+    ws.on("terminal_output", (data: { chunk: string }) => {
+      setTerminalLines((prev) => {
+        const last = prev[prev.length - 1];
+        if (last && last.type === "output") {
+          // Append to existing output line
+          return [
+            ...prev.slice(0, -1),
+            { ...last, content: last.content + data.chunk },
+          ];
+        } else {
+          // Create new output line
+          return [
+            ...prev,
+            {
+              id: Date.now().toString(),
+              type: "output",
+              content: data.chunk,
+            },
+          ];
+        }
+      });
+    });
+
+    ws.on("terminal_complete", (data: { success: boolean; exitCode?: number }) => {
+      if (!data.success && data.exitCode !== 0) {
+        setTerminalLines((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            type: "error",
+            content: `Command exited with code ${data.exitCode}`,
+          },
+        ]);
+      }
+    });
+
+    ws.on("terminal_error", (data: { message: string }) => {
+      setTerminalLines((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          type: "error",
+          content: data.message,
+        },
+      ]);
+    });
+
     return () => {
       ws.disconnect();
     };
@@ -487,6 +534,7 @@ export default function IDE() {
   };
 
   const handleTerminalCommand = (command: string) => {
+    // Add command to terminal
     setTerminalLines((prev) => [
       ...prev,
       {
@@ -494,12 +542,16 @@ export default function IDE() {
         type: "command",
         content: command,
       },
-      {
-        id: (Date.now() + 1).toString(),
-        type: "output",
-        content: "Command execution not yet implemented",
-      },
     ]);
+    
+    // Send command via WebSocket for execution
+    if (wsRef.current) {
+      wsRef.current.send({
+        type: "terminal_command",
+        workspaceId: WORKSPACE_ID,
+        command,
+      });
+    }
   };
 
   // Build file tree
