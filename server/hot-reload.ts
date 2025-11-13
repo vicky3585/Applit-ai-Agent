@@ -75,19 +75,21 @@ export class HotReloadManager {
       filePath
     );
 
-    console.log(`[HotReload] File ${event}: ${relativePath}`);
+    console.log(`[HotReload] File ${event}: ${relativePath} (workspace: ${workspaceId})`);
 
-    // Broadcast to WebSocket clients
+    // Broadcast to WebSocket clients in the specific workspace only
     if (this.wsServer) {
-      this.wsServer.clients.forEach((client) => {
-        if (client.readyState === 1) { // WebSocket.OPEN
+      this.wsServer.clients.forEach((client: any) => {
+        if (client.readyState === 1 && client.workspaceId === workspaceId) {
           client.send(
             JSON.stringify({
               type: "hot_reload",
-              event,
-              file: relativePath,
-              workspaceId,
-              timestamp: Date.now(),
+              data: {
+                event,
+                file: relativePath,
+                workspaceId,
+                timestamp: Date.now(),
+              }
             })
           );
         }

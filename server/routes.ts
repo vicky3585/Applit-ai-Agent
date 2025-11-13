@@ -24,8 +24,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Store active WebSocket connections by workspace ID
   const connections = new Map<string, Set<WebSocket>>();
 
-  wss.on("connection", (ws: WebSocket) => {
+  wss.on("connection", (ws: WebSocket & { workspaceId?: string }) => {
     let workspaceId: string | null = null;
+    let hasJoined = false;
+
+    // Set timeout to close connection if client doesn't join within 10 seconds
+    const joinTimeout = setTimeout(() => {
+      if (!hasJoined) {
+        console.log("[WebSocket] Client did not join, closing connection");
+        ws.close();
+      }
+    }, 10000);
 
     ws.on("message", async (message: any) => {
       try {
@@ -34,6 +43,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (data.type === "join" && typeof data.workspaceId === "string") {
           const wsId = data.workspaceId;
           workspaceId = wsId;
+          ws.workspaceId = wsId; // Store workspace ID on client for filtering
+          hasJoined = true;
+          clearTimeout(joinTimeout);
+          
           if (!connections.has(wsId)) {
             connections.set(wsId, new Set());
           }
@@ -45,18 +58,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
             type: "agent_state",
             data: execution || { status: "idle" },
           }));
+          return; // Don't process other messages until joined
         }
 
-        if (data.type === "chat_message" && typeof data.workspaceId === "string") {
+        // Require join before processing other messages
+        if (!hasJoined || !workspaceId) {
+          console.log("[WebSocket] Message received before join, ignoring");
+          return;
+        }
+
+        if (data.type === "chat_message") {
+          // Security: Verify workspace ID matches authenticated session
+          if (data.workspaceId !== workspaceId) {
+            console.warn(`[WebSocket] Workspace mismatch: attempted ${data.workspaceId}, authenticated as ${workspaceId}`);
+            return;
+          }
+
           // Save user message
           await storage.createChatMessage(
-            data.workspaceId,
+            workspaceId,
             "user",
             data.content
           );
 
           // Broadcast to all clients in workspace
-          const workspaceConnections = connections.get(data.workspaceId);
+          const workspaceConnections = connections.get(workspaceId);
           workspaceConnections?.forEach((client) => {
             if (client.readyState === 1) {
               client.send(JSON.stringify({
@@ -71,20 +97,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
 
           // Process with AI agent
-          await processAgentRequest(data.workspaceId, data.content, workspaceConnections);
+          await processAgentRequest(workspaceId, data.content, workspaceConnections);
         }
 
-        if (data.type === "terminal_command" && typeof data.workspaceId === "string" && typeof data.command === "string") {
-          const workspaceConnections = connections.get(data.workspaceId);
+        if (data.type === "terminal_command" && typeof data.command === "string") {
+          // Security: Verify workspace ID matches authenticated session
+          if (data.workspaceId && data.workspaceId !== workspaceId) {
+            console.warn(`[WebSocket] Workspace mismatch: attempted ${data.workspaceId}, authenticated as ${workspaceId}`);
+            return;
+          }
+
+          const workspaceConnections = connections.get(workspaceId);
           
           try {
             // Execute command with streaming output
             const result = await sandbox.executeCommandWithOptions({
-              workspaceId: data.workspaceId,
+              workspaceId,
               command: data.command,
               onOutput: (chunk: string) => {
                 // Broadcast each output chunk in real-time
-                broadcastToWorkspace(data.workspaceId, {
+                broadcastToWorkspace(workspaceId, {
                   type: "terminal_output",
                   data: { chunk },
                 }, workspaceConnections);
@@ -92,7 +124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
             
             // Broadcast completion
-            broadcastToWorkspace(data.workspaceId, {
+            broadcastToWorkspace(workspaceId, {
               type: "terminal_complete",
               data: { 
                 success: result.success, 
@@ -101,7 +133,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               },
             }, workspaceConnections);
           } catch (error: any) {
-            broadcastToWorkspace(data.workspaceId, {
+            broadcastToWorkspace(workspaceId, {
               type: "terminal_error",
               data: { message: error.message || "Command execution failed" },
             }, workspaceConnections);
@@ -113,6 +145,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
 
     ws.on("close", () => {
+      clearTimeout(joinTimeout);
       if (workspaceId && connections.has(workspaceId)) {
         connections.get(workspaceId)!.delete(ws);
       }
@@ -132,12 +165,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Import and create orchestrator
       const { AgentOrchestrator } = await import("./agents/orchestrator");
       const orchestrator = new AgentOrchestrator(storage);
-      
-      // Set max attempts from settings
-      const maxAttempts = settings?.maxIterations ? parseInt(settings.maxIterations) : 3;
-      orchestrator.setMaxAttempts(maxAttempts);
 
-      // Create agent context
+      // Create agent context (max attempts will be read from settings inside orchestrator)
       const context = {
         workspaceId,
         prompt: userMessage,

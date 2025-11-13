@@ -26,7 +26,7 @@ export class FilePersistence {
     }
 
     try {
-      const fullPath = this.getFullPath(workspaceId, filePath);
+      const fullPath = await this.getFullPathAsync(workspaceId, filePath);
       const dir = path.dirname(fullPath);
 
       // Ensure directory exists
@@ -50,7 +50,7 @@ export class FilePersistence {
     }
 
     try {
-      const fullPath = this.getFullPath(workspaceId, filePath);
+      const fullPath = await this.getFullPathAsync(workspaceId, filePath);
       const content = await fs.readFile(fullPath, "utf-8");
       return content;
     } catch (error: any) {
@@ -68,7 +68,7 @@ export class FilePersistence {
     }
 
     try {
-      const fullPath = this.getFullPath(workspaceId, filePath);
+      const fullPath = await this.getFullPathAsync(workspaceId, filePath);
       await fs.unlink(fullPath);
       console.log(`[FilePersistence] Deleted: ${filePath}`);
     } catch (error: any) {
@@ -87,8 +87,8 @@ export class FilePersistence {
     }
 
     try {
-      const fullOldPath = this.getFullPath(workspaceId, oldPath);
-      const fullNewPath = this.getFullPath(workspaceId, newPath);
+      const fullOldPath = await this.getFullPathAsync(workspaceId, oldPath);
+      const fullNewPath = await this.getFullPathAsync(workspaceId, newPath);
       
       // Ensure target directory exists
       const newDir = path.dirname(fullNewPath);
@@ -137,24 +137,68 @@ export class FilePersistence {
     return path.join(this.workspaceRoot, workspaceId);
   }
 
-  private getFullPath(workspaceId: string, filePath: string): string {
+  private async getFullPathAsync(workspaceId: string, filePath: string): Promise<string> {
     // Security: Validate workspace ID (alphanumeric, hyphens, underscores only)
     if (!/^[a-zA-Z0-9_-]+$/.test(workspaceId)) {
       throw new Error(`Invalid workspace ID: ${workspaceId}`);
     }
 
-    const workspacePath = this.getWorkspacePath(workspaceId);
-    const fullPath = path.join(workspacePath, filePath);
+    // Security: Reject absolute paths, drive-relative paths, and UNC paths
+    if (path.isAbsolute(filePath) || filePath.startsWith('//') || filePath.startsWith('\\\\') || /^[a-zA-Z]:/.test(filePath)) {
+      throw new Error(`Invalid file path: ${filePath} (absolute paths not allowed)`);
+    }
 
-    // Security: Use realpath to resolve symlinks and ensure path is within workspace
-    const resolvedPath = path.resolve(fullPath);
-    const resolvedWorkspace = path.resolve(workspacePath);
+    // Normalize file path to prevent traversal with ../ segments
+    const normalizedFilePath = path.normalize(filePath).replace(/^(\.\.(\/|\\|$))+/, '');
+    
+    const workspacePath = this.getWorkspacePath(workspaceId);
+    const fullPath = path.join(workspacePath, normalizedFilePath);
+
+    // Security: Validate ALL parent directories to prevent symlink attacks
+    // Start from workspace and validate each path component
+    const resolvedWorkspace = await this.resolvePathSafely(workspacePath);
+    const resolvedRoot = await this.resolvePathSafely(this.workspaceRoot);
+
+    // Check each path component from workspace down to parent directory
+    let currentPath = workspacePath;
+    const pathComponents = normalizedFilePath.split(path.sep).filter(Boolean);
+    
+    for (let i = 0; i < pathComponents.length - 1; i++) {
+      currentPath = path.join(currentPath, pathComponents[i]);
+      const resolvedCurrent = await this.resolvePathSafely(currentPath);
+      
+      // Ensure resolved path is within workspace
+      if (!resolvedCurrent.startsWith(resolvedWorkspace + path.sep) && resolvedCurrent !== resolvedWorkspace) {
+        throw new Error(`Invalid file path: ${filePath} (symlink traversal in path component)`);
+      }
+    }
+
+    // Final containment check
+    const resolvedPath = await this.resolvePathSafely(fullPath);
     
     if (!resolvedPath.startsWith(resolvedWorkspace + path.sep) && resolvedPath !== resolvedWorkspace) {
       throw new Error(`Invalid file path: ${filePath} (path traversal detected)`);
     }
+    
+    if (!resolvedPath.startsWith(resolvedRoot + path.sep) && resolvedPath !== resolvedRoot) {
+      throw new Error(`Invalid file path: ${filePath} (escapes workspace root)`);
+    }
 
-    return resolvedPath;
+    return fullPath; // Return original path for file operations
+  }
+
+  /**
+   * Safely resolve a path, following symlinks if it exists
+   */
+  private async resolvePathSafely(targetPath: string): Promise<string> {
+    try {
+      // If path exists, resolve symlinks
+      return await fs.realpath(targetPath);
+    } catch {
+      // If path doesn't exist, return resolved path for validation
+      // (Symlink attacks prevented by validating all parent directories)
+      return path.resolve(targetPath);
+    }
   }
 
   private async walkDirectory(dir: string): Promise<string[]> {
@@ -195,9 +239,12 @@ export function getFilePersistence(): FilePersistence {
     const enableSync = ENV_CONFIG.env === "local" || ENV_CONFIG.env === "development";
     
     // Use temp directory appropriate for environment
-    const workspaceRoot = ENV_CONFIG.env === "local" 
+    let workspaceRoot = ENV_CONFIG.env === "local" 
       ? "/tmp/ide-workspaces"
       : process.env.TMPDIR || "/tmp/ide-workspaces";
+    
+    // Normalize workspace root to prevent path traversal at the root level
+    workspaceRoot = path.resolve(workspaceRoot);
     
     filePersistence = new FilePersistence({
       workspaceRoot,
