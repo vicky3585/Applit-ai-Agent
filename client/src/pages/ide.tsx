@@ -4,7 +4,7 @@ import TopBar from "@/components/TopBar";
 import FileExplorer from "@/components/FileExplorer";
 import CodeEditor from "@/components/CodeEditor";
 import CodeServerFrame from "@/components/CodeServerFrame";
-import LivePreview from "@/components/LivePreview";
+import PreviewPane from "@/components/PreviewPane";
 import ChatPanel from "@/components/ChatPanel";
 import TerminalPanel from "@/components/TerminalPanel";
 import AgentStatePanel from "@/components/AgentStatePanel";
@@ -685,7 +685,7 @@ export default function IDE() {
 
               {/* Live Preview */}
               <TabsContent value="preview" className="flex-1 m-0 overflow-hidden">
-                <LivePreview />
+                <PreviewPane workspaceId={WORKSPACE_ID} autoReload={true} />
               </TabsContent>
             </Tabs>
 

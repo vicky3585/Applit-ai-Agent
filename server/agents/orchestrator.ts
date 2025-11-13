@@ -4,6 +4,7 @@ import type { File, WorkspaceSettings } from "@shared/schema";
 import { PlannerAgent } from "./planner";
 import { CoderAgent } from "./coder";
 import { TesterAgent } from "./tester";
+import { getFilePersistence } from "../file-persistence";
 
 export interface AgentWorkflowState {
   status: "idle" | "processing" | "complete" | "failed";
@@ -85,7 +86,8 @@ export class AgentOrchestrator {
             state.logs.push(`  - ${f.path}`);
           });
           
-          // Save generated files to storage
+          // Save generated files to storage and disk
+          const filePersistence = getFilePersistence();
           for (const file of codeResult.files) {
             await this.storage.createFile(
               context.workspaceId,
@@ -93,6 +95,13 @@ export class AgentOrchestrator {
               file.content,
               file.language || "plaintext"
             );
+            
+            // Also save to disk for preview
+            try {
+              await filePersistence.saveFile(context.workspaceId, file.path, file.content);
+            } catch (error: any) {
+              state.logs.push(`[Warning] Could not save to disk: ${file.path}`);
+            }
           }
 
           // Step 3: Testing

@@ -363,6 +363,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  app.get("/api/workspaces/:id/preview-url", async (req, res) => {
+    // Return the preview URL for the workspace
+    // In Replit, this is typically the main app URL
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    res.json({ url: baseUrl });
+  });
+
   app.get("/api/workspaces/:id/agent", async (req, res) => {
     const execution = await storage.getAgentExecution(req.params.id);
     res.json(execution || { status: "idle" });
