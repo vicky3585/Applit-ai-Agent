@@ -8,7 +8,7 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Progress
 
-**Phase 7 Multiplayer Foundation - Tasks 7.5-7.7 Complete (November 13, 2025):**
+**Phase 7 Multiplayer Foundation - Tasks 7.5-7.8 Complete (November 13, 2025):**
 
 ✅ **Task 7.5: Yjs Persistence Layer** - E2E tested and verified working:
 - Implemented three storage methods: `getYjsDocument`, `upsertYjsDocument`, `deleteYjsDocument`
@@ -34,6 +34,14 @@ Preferred communication style: Simple, everyday language.
 - Each collaborator retains distinct cursor/selection colors (8-color palette)
 - Added hover tooltips showing username on cursors/selections
 - Proper cleanup of decorations on tab change and unmount
+
+✅ **Task 7.8: File Tree Presence Indicators** - Architect approved:
+- Created `useFilePresence` hook for encapsulated state management
+- FileExplorer displays colored dots next to active files (up to 3 users + overflow count)
+- **Critical fixes**: Unique file ID keying (`tab.id` not `tab.name`) prevents duplicate filename collisions; useEffect dependency triggers correctly on file switches; background tab cleanup calls `onAwarenessUpdate` to prevent ghost indicators
+- Real-time updates as users join/leave/switch files
+- Supports multiple users per file with automatic deduplication
+- Proper test IDs for all presence elements
 
 ## System Architecture
 
