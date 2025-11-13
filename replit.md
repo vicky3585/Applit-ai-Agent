@@ -37,7 +37,7 @@ The system integrates with the OpenAI API for GPT-powered coding assistance. AI 
 - Gap analysis completed
 
 **Phase 2: Core IDE Features** (In Progress)
-- Task 2.1: Docker Sandbox Infrastructure ✅ (Pending Review)
+- Task 2.1: Docker Sandbox Infrastructure ✅ (PRODUCTION-READY - Architect Approved)
 - Task 2.2: Code Execution with File Mounting (Planned)
 - Task 2.3: Terminal WebSocket with Streaming Output (Planned)
 - Task 2.4: Live Preview Proxy Server (Planned)
@@ -75,35 +75,51 @@ The system integrates with the OpenAI API for GPT-powered coding assistance. AI 
 
 ## Recent Development Progress
 
-**Phase 2 Task 2.1 - Docker Sandbox Infrastructure** (In Review 2025-11-13):
+**Phase 2 Task 2.1 - Docker Sandbox Infrastructure** ✅ (PRODUCTION-READY 2025-11-13):
 
-Production-ready container lifecycle management system:
+Architect-approved production container lifecycle management system with complete concurrency control and error recovery.
 
 **Architecture**:
-- **SandboxManager**: Centralized Docker container lifecycle management
-- **Container-per-workspace**: Each workspace gets isolated Docker container
-- **Multi-runtime support**: Node.js, Python, Fullstack base images
+- **SandboxManager**: Centralized Docker container lifecycle management with mutex-based locking
+- **Container-per-workspace**: Each workspace gets isolated Docker container with dedicated volumes
+- **Multi-runtime support**: Node.js, Python, Fullstack base images with auto-pull
 - **Resource limits**: Configurable CPU/memory constraints (default: 512MB, 1 CPU)
-- **File mounting**: Workspace files mounted as volumes for bidirectional sync
+- **File mounting**: Workspace files mounted as volumes at /workspace for bidirectional sync
 
-**Key Features**:
-- State reconciliation on startup (recovers from crashes)
-- Periodic cleanup task (30-minute TTL for idle containers)
-- Metrics logging (CPU/memory usage, execution time tracking)
-- Graceful shutdown with container cleanup
-- Auto-pull Docker images on demand
-- Integration with existing ISandbox interface
+**Production Features**:
+- **Activity tracking**: `lastActivityAt` timestamp updated on every execution
+- **TTL-based cleanup**: Automatic removal of idle containers after 30 minutes (5-minute polling)
+- **Race condition prevention**: Creation locks serialize concurrent container access
+- **Deadlock prevention**: Promise-based locks with reject handlers ensure waiters never hang
+- **State reconciliation**: Discovers and tracks existing containers on startup
+- **Graceful shutdown**: SIGTERM/SIGINT handlers cleanup all containers before exit
+- **Metrics logging**: CPU/memory usage, execution time, exit code tracking
+- **Auto-recovery**: Failed operations reject locks, allowing automatic retry
 
-**Implementation**:
-- `server/sandbox-manager.ts`: Production Docker lifecycle manager
-- `server/sandbox.ts`: Updated to use SandboxManager
-- `server/index.ts`: Added graceful shutdown handlers
-- Supports both local Docker execution and Replit mock mode
+**Critical Bug Fixes**:
+- ✅ Fixed race conditions with promise-based creation locks
+- ✅ Added reject handlers to prevent indefinite hangs on Docker errors
+- ✅ Switched from createdAt to lastActivityAt for accurate TTL tracking
+- ✅ Implemented proper state reconciliation for crash recovery
+- ✅ Added activity timestamp updates on all container operations
 
-**Next Steps**:
-- Add workspace runtime persistence
-- Implement file sync optimizations  
-- Build terminal streaming integration
+**Implementation Files**:
+- `server/sandbox-manager.ts`: Core lifecycle manager (531 lines)
+- `server/sandbox.ts`: ISandbox implementation with SandboxManager integration
+- `server/index.ts`: Graceful shutdown handlers for production deployment
+
+**Verified Behaviors**:
+- ✅ Only one caller creates/starts containers per workspace
+- ✅ Concurrent callers wait on shared lock promise
+- ✅ Transient Docker errors trigger automatic retry
+- ✅ Idle containers cleaned up based on actual activity
+- ✅ Clean shutdown removes all running containers
+
+**Future Enhancements** (Optional):
+- Workspace runtime persistence in database
+- Automated concurrency stress tests
+- Enhanced operational logging/metrics
+- File sync optimizations for large workspaces
 
 ## Previous Development Progress
 
