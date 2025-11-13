@@ -109,19 +109,24 @@ export default function CodeEditor({
     const isNewProvider = !provider;
     
     if (!provider) {
-      // Construct WebSocket URL with query parameters
+      // Construct WebSocket URL - y-websocket uses standard pattern
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const params = new URLSearchParams({
-        workspaceId,
+      const baseUrl = `${protocol}//${window.location.host}`;
+      
+      // y-websocket will construct: baseUrl/roomname
+      // We use a custom roomname that encodes workspace and document info
+      const roomname = `yjs/${workspaceId}/${currentTab.name}`;
+      
+      // Pass user info via params
+      const params = {
         userId,
         username,
-        docName: currentTab.name,
-      });
-      const wsUrl = `${protocol}//${window.location.host}/yjs?${params.toString()}`;
+      };
 
-      provider = new WebsocketProvider(wsUrl, "", ydoc, {
+      provider = new WebsocketProvider(baseUrl, roomname, ydoc, {
         connect: true,
         WebSocketPolyfill: WebSocket,
+        params,
       });
       providerCache.set(docKey, provider);
 

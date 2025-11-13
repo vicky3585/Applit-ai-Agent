@@ -37,16 +37,37 @@ export class YjsProvider {
    * Initialize Yjs WebSocket server with canonical y-websocket protocol
    */
   initialize(httpServer: HttpServer) {
+    // Create WebSocket server with noServer mode - we'll handle upgrade manually
     this.wss = new WebSocketServer({ 
-      server: httpServer, 
-      path: "/yjs" 
+      noServer: true  // We'll handle upgrade manually
+    });
+
+    // Handle HTTP upgrade requests manually to filter for /yjs paths
+    httpServer.on("upgrade", (request, socket, head) => {
+      const pathname = new URL(request.url!, "http://localhost").pathname;
+      
+      // Accept any path starting with /yjs
+      if (pathname.startsWith("/yjs")) {
+        console.log(`[YjsProvider] WebSocket upgrade request: ${pathname}`);
+        
+        this.wss!.handleUpgrade(request, socket, head, (conn) => {
+          this.wss!.emit("connection", conn, request);
+        });
+      }
+      // Otherwise, let other handlers deal with it
     });
 
     this.wss.on("connection", (conn: WebSocket, req) => {
+      console.log(`[YjsProvider] New WebSocket connection established`);
+      console.log(`[YjsProvider] Request URL: ${req.url}`);
       this.setupWSConnection(conn, req);
     });
 
-    console.log("[YjsProvider] WebSocket server initialized on /yjs");
+    this.wss.on("error", (error) => {
+      console.error("[YjsProvider] WebSocket server error:", error);
+    });
+
+    console.log("[YjsProvider] WebSocket server initialized on /yjs/*");
   }
 
   /**
@@ -55,14 +76,17 @@ export class YjsProvider {
   private async setupWSConnection(conn: WebSocket, req: any) {
     conn.binaryType = "arraybuffer";
 
-    // Parse query parameters
+    // Parse URL: /yjs/workspaceId/docName?userId=...&username=...
     const url = new URL(req.url, "http://localhost");
-    const docName = url.searchParams.get("docName") || "default";
-    const workspaceId = url.searchParams.get("workspaceId") || "default";
+    const pathParts = url.pathname.split("/").filter(Boolean); // ["yjs", "workspaceId", "docName"]
+    
+    const workspaceId = pathParts[1] || "default-workspace";
+    const docName = pathParts.slice(2).join("/") || "default.txt"; // Support nested paths
     const userId = url.searchParams.get("userId") || "anonymous";
     const username = url.searchParams.get("username") || "Anonymous";
 
     const fullDocName = `${workspaceId}:${docName}`;
+    console.log(`[YjsProvider] Connecting to doc: workspace=${workspaceId}, file=${docName}`);
 
     // Get or create shared document (with persistence loading)
     const doc = await getYDoc(fullDocName, workspaceId, this.storage);
