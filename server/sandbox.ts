@@ -210,22 +210,65 @@ class MockSandbox implements ISandbox {
   async executeFileWithOptions(options: ExecutionOptions): Promise<ExecutionResult> {
     console.log(`[MockSandbox] Would execute file: ${options.filePath} (hint: ${options.languageHint})`);
     
-    // Simulate streaming output if callback provided
-    const mockOutput = `[Mock Execution] File execution logged: ${options.filePath}\n(Docker not available on Replit - deploy locally for real execution)\n`;
+    // Try to read file content and generate realistic simulated output
+    let simulatedOutput = "";
+    let fileContent = "";
     
+    if (this.storage) {
+      try {
+        // Find file by path
+        const files = await this.storage.getFilesByWorkspace(options.workspaceId);
+        const file = files.find(f => f.path === options.filePath);
+        
+        if (file) {
+          fileContent = file.content;
+          
+          // Parse console.log/print statements to generate deterministic output
+          const extension = options.filePath.split(".").pop();
+          
+          if (extension === "js" || extension === "ts") {
+            // Extract console.log statements
+            const logMatches = Array.from(fileContent.matchAll(/console\.log\((["'`])(.*?)\1\)/g));
+            for (const match of logMatches) {
+              simulatedOutput += match[2] + "\n";
+            }
+          } else if (extension === "py") {
+            // Extract print statements
+            const printMatches = Array.from(fileContent.matchAll(/print\((["'])(.*?)\1\)/g));
+            for (const match of printMatches) {
+              simulatedOutput += match[2] + "\n";
+            }
+          }
+        }
+      } catch (error) {
+        console.error("[MockSandbox] Failed to read file:", error);
+      }
+    }
+    
+    // Fallback to generic message if no output generated
+    if (!simulatedOutput) {
+      simulatedOutput = `[Mock Execution] File execution simulated: ${options.filePath}\n(Docker not available on Replit - deploy locally for real execution)\n`;
+    }
+    
+    // Add header to indicate mock execution
+    const mockHeader = `[Simulated Execution - Docker unavailable]\n`;
+    const fullOutput = mockHeader + simulatedOutput;
+    
+    // Simulate streaming output if callback provided
     if (options.onOutput) {
-      // Simulate realistic streaming by splitting into chunks
-      const chunks = mockOutput.match(/.{1,50}/g) || [mockOutput];
-      for (const chunk of chunks) {
-        options.onOutput(chunk);
-        // Small delay to simulate real execution
-        await new Promise(resolve => setTimeout(resolve, 50));
+      // Stream character by character for realism
+      for (let i = 0; i < fullOutput.length; i++) {
+        options.onOutput(fullOutput[i]);
+        // Small delay to simulate real execution (faster than before)
+        if (i % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
       }
     }
     
     return {
       success: true,
-      output: mockOutput,
+      output: fullOutput,
       exitCode: 0,
     };
   }

@@ -631,6 +631,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       // Execute with streaming callback
+      console.log(`[Execution] Starting file execution: ${file.path}`);
       sandbox.executeFileWithOptions({
         workspaceId: req.params.id,
         filePath: file.path,
@@ -638,6 +639,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         onOutput,
       })
         .then(async (result) => {
+          console.log(`[Execution] Promise resolved for ${file.path}, result:`, result);
           try {
             // Clear timer first
             if (broadcastTimer) {
@@ -647,6 +649,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             // Flush remaining output before marking complete
             await flushOutput();
+            console.log(`[Execution] Output flushed for ${file.path}`);
 
             // Update execution record with final result (don't overwrite output - it was streamed incrementally)
             await storage.updateCodeExecution(execution.id, {
@@ -655,6 +658,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               exitCode: result.exitCode !== undefined && result.exitCode !== null ? String(result.exitCode) : null,
               completedAt: new Date(),
             });
+            console.log(`[Execution] Updated execution record: ${execution.id}`);
 
             // Broadcast completion
             const updated = await storage.getCodeExecution(execution.id);
@@ -662,6 +666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               type: "execution_completed",
               data: updated,
             });
+            console.log(`[Execution] Broadcast completion for ${file.path}`);
           } catch (error: any) {
             console.error("[Execution] Failed to complete execution:", error);
             // Mark as failed if flush/update fails
@@ -673,6 +678,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         })
         .catch(async (error) => {
+          console.error(`[Execution] Promise rejected for ${file.path}:`, error);
           try {
             // Clear timer first
             if (broadcastTimer) {
@@ -699,6 +705,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             type: "execution_failed",
             data: updated,
           });
+          console.log(`[Execution] Broadcast failure for ${file.path}`);
         });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
