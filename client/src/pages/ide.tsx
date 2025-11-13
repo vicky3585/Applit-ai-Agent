@@ -12,6 +12,10 @@ import LogsPanel from "@/components/LogsPanel";
 import SettingsModal from "@/components/SettingsModal";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { WebSocketClient } from "@/lib/websocket";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -37,6 +41,13 @@ export default function IDE() {
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
   const [terminalLines, setTerminalLines] = useState<any[]>([]);
   const [logs, setLogs] = useState<any[]>([]);
+  const [newFileDialogOpen, setNewFileDialogOpen] = useState(false);
+  const [newFilePath, setNewFilePath] = useState("");
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameFile, setRenameFile] = useState<any | null>(null);
+  const [renamePath, setRenamePath] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteFile, setDeleteFile] = useState<any | null>(null);
   const wsRef = useRef<WebSocketClient | null>(null);
 
   // Fetch files
@@ -105,9 +116,40 @@ export default function IDE() {
     });
   };
 
+  const createFileMutation = useMutation({
+    mutationFn: async ({ path, content }: { path: string; content: string }) => {
+      return apiRequest("POST", `/api/workspaces/${WORKSPACE_ID}/files`, { 
+        path, 
+        content: content || "",
+        language: path.split(".").pop() || "plaintext"
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+    },
+  });
+
   const updateFileMutation = useMutation({
     mutationFn: async ({ id, content }: { id: string; content: string }) => {
       return apiRequest("PUT", `/api/files/${id}`, { content });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+    },
+  });
+
+  const renameFileMutation = useMutation({
+    mutationFn: async ({ id, newPath }: { id: string; newPath: string }) => {
+      return apiRequest("PATCH", `/api/files/${id}/rename`, { newPath });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+    },
+  });
+
+  const deleteFileMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("DELETE", `/api/files/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
@@ -159,6 +201,90 @@ export default function IDE() {
     const tab = openTabs.find((t) => t.id === tabId);
     if (tab) {
       updateFileMutation.mutate({ id: tabId, content });
+    }
+  };
+
+  const handleCreateFile = async () => {
+    if (!newFilePath.trim()) {
+      addLog("error", "File path cannot be empty");
+      return;
+    }
+    
+    // Check for duplicate paths
+    const existingFile = files.find((f: any) => f.path === newFilePath);
+    if (existingFile) {
+      addLog("error", `File already exists at path: ${newFilePath}`);
+      return;
+    }
+    
+    try {
+      await createFileMutation.mutateAsync({ 
+        path: newFilePath, 
+        content: "" 
+      });
+      setNewFileDialogOpen(false);
+      setNewFilePath("");
+      addLog("info", `Created file: ${newFilePath}`);
+    } catch (error: any) {
+      addLog("error", `Failed to create file: ${error.message || "Unknown error"}`);
+    }
+  };
+
+  const handleRenameFile = async () => {
+    if (!renamePath.trim()) {
+      addLog("error", "File path cannot be empty");
+      return;
+    }
+    
+    if (!renameFile) return;
+    
+    try {
+      await renameFileMutation.mutateAsync({ 
+        id: renameFile.id, 
+        newPath: renamePath 
+      });
+      
+      // Update ALL open tabs with matching ID (not just active)
+      setOpenTabs((prev) =>
+        prev.map((tab) =>
+          tab.id === renameFile.id
+            ? { ...tab, name: renamePath.split("/").pop() }
+            : tab
+        )
+      );
+      
+      setRenameDialogOpen(false);
+      setRenameFile(null);
+      setRenamePath("");
+      addLog("info", `Renamed file to: ${renamePath}`);
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || error.message || "Unknown error";
+      addLog("error", `Failed to rename file: ${errorMsg}`);
+    }
+  };
+
+  const handleDeleteFile = async () => {
+    if (!deleteFile) return;
+    
+    try {
+      await deleteFileMutation.mutateAsync(deleteFile.id);
+      
+      // Remove ALL tabs with matching ID (not just active)
+      setOpenTabs((prev) => prev.filter((tab) => tab.id !== deleteFile.id));
+      
+      // If deleted file was active, switch to another tab
+      if (activeTabId === deleteFile.id) {
+        const remaining = openTabs.filter((tab) => tab.id !== deleteFile.id);
+        setActiveTabId(remaining.length > 0 ? remaining[0].id : null);
+      }
+      
+      setDeleteDialogOpen(false);
+      setDeleteFile(null);
+      addLog("info", `Deleted file: ${deleteFile.path}`);
+    } catch (error: any) {
+      const errorMsg = error.response?.data?.error || error.message || "Unknown error";
+      addLog("error", `Failed to delete file: ${errorMsg}`);
+      // Keep dialog open on error so user can retry or cancel
     }
   };
 
@@ -237,8 +363,22 @@ export default function IDE() {
           <FileExplorer
             files={fileTree}
             onFileSelect={handleFileSelect}
-            onNewFile={() => console.log("New file")}
-            onNewFolder={() => console.log("New folder")}
+            onNewFile={() => setNewFileDialogOpen(true)}
+            onRenameFile={(file) => {
+              const fullFile = files.find((f: any) => f.id === file.id);
+              if (fullFile) {
+                setRenameFile(fullFile);
+                setRenamePath(fullFile.path);
+                setRenameDialogOpen(true);
+              }
+            }}
+            onDeleteFile={(file) => {
+              const fullFile = files.find((f: any) => f.id === file.id);
+              if (fullFile) {
+                setDeleteFile(fullFile);
+                setDeleteDialogOpen(true);
+              }
+            }}
           />
         </ResizablePanel>
 
@@ -341,6 +481,130 @@ export default function IDE() {
       </ResizablePanelGroup>
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+
+      {/* New File Dialog */}
+      <Dialog open={newFileDialogOpen} onOpenChange={setNewFileDialogOpen}>
+        <DialogContent data-testid="dialog-new-file">
+          <DialogHeader>
+            <DialogTitle>Create New File</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="file-path">File Path</Label>
+              <Input
+                id="file-path"
+                data-testid="input-file-path"
+                placeholder="src/components/MyComponent.tsx"
+                value={newFilePath}
+                onChange={(e) => setNewFilePath(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleCreateFile();
+                  }
+                }}
+              />
+              <p className="text-sm text-muted-foreground">
+                Folders will be created automatically based on the path
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setNewFileDialogOpen(false)}
+              data-testid="button-cancel-file"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateFile}
+              disabled={!newFilePath.trim() || createFileMutation.isPending}
+              data-testid="button-create-file"
+            >
+              {createFileMutation.isPending ? "Creating..." : "Create File"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Rename File Dialog */}
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent data-testid="dialog-rename-file">
+          <DialogHeader>
+            <DialogTitle>Rename File</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="rename-path">New Path</Label>
+              <Input
+                id="rename-path"
+                data-testid="input-rename-path"
+                placeholder="src/components/MyComponent.tsx"
+                value={renamePath}
+                onChange={(e) => setRenamePath(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleRenameFile();
+                  }
+                }}
+              />
+              <p className="text-sm text-muted-foreground">
+                Current: {renameFile?.path}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRenameDialogOpen(false)}
+              data-testid="button-cancel-rename"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRenameFile}
+              disabled={!renamePath.trim() || renameFileMutation.isPending}
+              data-testid="button-confirm-rename"
+            >
+              {renameFileMutation.isPending ? "Renaming..." : "Rename"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete File Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent data-testid="dialog-delete-file">
+          <DialogHeader>
+            <DialogTitle>Delete File</DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm">
+              Are you sure you want to delete <strong>{deleteFile?.path}</strong>?
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
+              This action cannot be undone.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              data-testid="button-cancel-delete"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteFile}
+              disabled={deleteFileMutation.isPending}
+              data-testid="button-confirm-delete"
+            >
+              {deleteFileMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
