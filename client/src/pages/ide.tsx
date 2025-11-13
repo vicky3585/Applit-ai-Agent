@@ -52,7 +52,7 @@ export default function IDE() {
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [githubBrowserOpen, setGithubBrowserOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState("chat");
-  const [editorView, setEditorView] = useState<"custom" | "code-server" | "preview">("custom");
+  const [editorView, setEditorView] = useState<"custom" | "code-server" | "preview" | "split">("custom");
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState("");
@@ -657,6 +657,9 @@ export default function IDE() {
                 <TabsTrigger value="custom" className="text-xs" data-testid="tab-editor-custom">
                   Editor
                 </TabsTrigger>
+                <TabsTrigger value="split" className="text-xs" data-testid="tab-editor-split">
+                  Split View
+                </TabsTrigger>
                 <TabsTrigger value="code-server" className="text-xs" data-testid="tab-editor-vscode">
                   VS Code
                 </TabsTrigger>
@@ -678,6 +681,25 @@ export default function IDE() {
                 </div>
               </TabsContent>
 
+              {/* Split View - Code + Preview side-by-side */}
+              <TabsContent value="split" className="flex-1 m-0 overflow-hidden">
+                <ResizablePanelGroup direction="horizontal">
+                  <ResizablePanel defaultSize={50} minSize={30}>
+                    <CodeEditor
+                      tabs={openTabs}
+                      activeTabId={activeTabId || undefined}
+                      onTabChange={setActiveTabId}
+                      onTabClose={handleTabClose}
+                      onContentChange={handleContentChange}
+                    />
+                  </ResizablePanel>
+                  <ResizableHandle />
+                  <ResizablePanel defaultSize={50} minSize={30}>
+                    <PreviewPane workspaceId={WORKSPACE_ID} autoReload={true} />
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              </TabsContent>
+
               {/* code-server (VS Code) */}
               <TabsContent value="code-server" className="flex-1 m-0 overflow-hidden">
                 <CodeServerFrame workspaceId={WORKSPACE_ID} />
@@ -689,8 +711,8 @@ export default function IDE() {
               </TabsContent>
             </Tabs>
 
-            {/* Terminal (shown for all views except preview) */}
-            {editorView !== "preview" && (
+            {/* Terminal (shown for all views except preview and split) */}
+            {editorView !== "preview" && editorView !== "split" && (
               <TerminalPanel
                 lines={terminalLines}
                 onCommand={handleTerminalCommand}

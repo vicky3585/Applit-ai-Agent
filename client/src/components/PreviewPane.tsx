@@ -21,6 +21,25 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
     detectPreviewUrl();
   }, [workspaceId]);
 
+  // Hot reload - listen for file changes via WebSocket
+  useEffect(() => {
+    if (!autoReload) return;
+
+    // This will be enhanced later with WebSocket connection
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible" && iframeRef.current) {
+        // Refresh preview when tab becomes visible
+        handleRefresh();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [autoReload]);
+
   const detectPreviewUrl = async () => {
     setLoading(true);
     setError(null);
