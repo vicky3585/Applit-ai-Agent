@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, jsonb, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -62,6 +62,7 @@ export const agentExecutions = pgTable("agent_executions", {
   status: text("status").notNull(), // 'idle' | 'processing' | 'complete' | 'failed'
   current_step: text("current_step").notNull(), // 'idle' | 'planning' | 'coding' | 'testing' | 'fixing' | 'complete'
   progress: real("progress").notNull().default(0.0), // 0.0 to 1.0
+  attempt_count: real("attempt_count").notNull().default(0), // Current retry attempt number
   logs: jsonb("logs").notNull().default(sql`'[]'::jsonb`), // Array of log messages
   files_generated: jsonb("files_generated").notNull().default(sql`'[]'::jsonb`), // Array of {path, content, language}
   errors: jsonb("errors").notNull().default(sql`'[]'::jsonb`), // Array of error messages
@@ -164,11 +165,10 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).pick({
   metadata: true,
 });
 
-export const insertAgentExecutionSchema = createInsertSchema(agentExecutions).pick({
-  workspaceId: true,
-  status: true,
-  currentNode: true,
-  metadata: true,
+export const insertAgentExecutionSchema = createInsertSchema(agentExecutions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
 });
 
 export const insertPackageSchema = createInsertSchema(packages).pick({

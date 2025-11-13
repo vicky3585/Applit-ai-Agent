@@ -181,18 +181,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Execute workflow with real-time updates
       const result = await orchestrator.executeWorkflow(context, (state) => {
         // Update storage
-        storage.createOrUpdateAgentExecution(
-          workspaceId,
-          state.status,
-          state.currentStep,
-          {
-            progress: state.progress,
-            logs: state.logs,
-            filesGenerated: state.filesGenerated,
-            errors: state.errors,
-            attemptCount: state.attemptCount,
-          }
-        );
+        storage.createOrUpdateAgentExecution(workspaceId, {
+          prompt: userMessage,
+          status: state.status,
+          current_step: state.currentStep,
+          progress: state.progress,
+          logs: state.logs,
+          files_generated: state.filesGenerated,
+          errors: state.errors,
+        });
 
         // Broadcast state updates
         broadcastToWorkspace(workspaceId, {
@@ -262,12 +259,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Agent processing error:", error);
       
-      await storage.createOrUpdateAgentExecution(
-        workspaceId,
-        "error",
-        undefined,
-        { error: error.message }
-      );
+      await storage.createOrUpdateAgentExecution(workspaceId, {
+        prompt: userMessage,
+        status: "failed",
+        current_step: "idle",
+        progress: 0.0,
+        logs: [`Error: ${error.message}`],
+        files_generated: [],
+        errors: [error.message],
+      });
 
       broadcastToWorkspace(workspaceId, {
         type: "agent_error",
@@ -599,9 +599,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             status: result.status || "complete",
             current_step: "complete",
             progress: 1.0,
-            logs: JSON.stringify(result.logs || []),
-            files_generated: JSON.stringify(result.files_generated || []),
-            errors: JSON.stringify(result.errors || []),
+            logs: result.logs || [],
+            files_generated: result.files_generated || [],
+            errors: result.errors || [],
           });
           
           return;
@@ -642,9 +642,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: state.status,
               current_step: state.currentStep,
               progress: state.progress,
-              logs: JSON.stringify(state.logs),
-              files_generated: JSON.stringify(state.filesGenerated),
-              errors: JSON.stringify(state.errors),
+              logs: state.logs,
+              files_generated: state.filesGenerated,
+              errors: state.errors,
             });
             
             // Broadcast state updates via WebSocket
@@ -691,9 +691,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: "failed",
           current_step: "idle",
           progress: 0.0,
-          logs: JSON.stringify([`Error: ${error.message}`]),
-          files_generated: JSON.stringify([]),
-          errors: JSON.stringify([error.message]),
+          logs: [`Error: ${error.message}`],
+          files_generated: [],
+          errors: [error.message],
         });
       }
     })().catch(err => console.error("[Agent] Async error:", err));

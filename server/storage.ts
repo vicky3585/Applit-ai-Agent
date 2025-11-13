@@ -60,10 +60,17 @@ export interface IStorage {
   // Agent execution methods
   getAgentExecution(workspaceId: string): Promise<AgentExecution | undefined>;
   createOrUpdateAgentExecution(
-    workspaceId: string, 
-    status: string, 
-    currentNode?: string, 
-    metadata?: any
+    workspaceId: string,
+    data: {
+      prompt?: string;
+      status: string;
+      current_step: string;
+      progress: number;
+      attempt_count?: number;
+      logs: any[];
+      files_generated: any[];
+      errors: any[];
+    }
   ): Promise<AgentExecution>;
   
   // Package methods
@@ -441,16 +448,28 @@ export class MemStorage implements IStorage {
 
   async createOrUpdateAgentExecution(
     workspaceId: string,
-    status: string,
-    currentNode?: string | null,
-    metadata?: any | null
+    data: {
+      prompt?: string;
+      status: string;
+      current_step: string;
+      progress: number;
+      attempt_count?: number;
+      logs: any[];
+      files_generated: any[];
+      errors: any[];
+    }
   ): Promise<AgentExecution> {
     const existing = await this.getAgentExecution(workspaceId);
     
     if (existing) {
-      existing.status = status;
-      existing.currentNode = currentNode || null;
-      existing.metadata = metadata || null;
+      existing.prompt = data.prompt || existing.prompt;
+      existing.status = data.status;
+      existing.current_step = data.current_step;
+      existing.progress = data.progress;
+      existing.attempt_count = data.attempt_count !== undefined ? data.attempt_count : (existing.attempt_count || 0);
+      existing.logs = data.logs;
+      existing.files_generated = data.files_generated;
+      existing.errors = data.errors;
       existing.updatedAt = new Date();
       this.agentExecutions.set(existing.id, existing);
       return existing;
@@ -460,9 +479,14 @@ export class MemStorage implements IStorage {
     const execution: AgentExecution = {
       id,
       workspaceId,
-      status,
-      currentNode: currentNode || null,
-      metadata: metadata || null,
+      prompt: data.prompt || null,
+      status: data.status,
+      current_step: data.current_step,
+      progress: data.progress,
+      attempt_count: data.attempt_count || 0,
+      logs: data.logs,
+      files_generated: data.files_generated,
+      errors: data.errors,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
