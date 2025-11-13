@@ -11,6 +11,7 @@ import AgentStatePanel from "@/components/AgentStatePanel";
 import LogsPanel from "@/components/LogsPanel";
 import { GitPanel } from "@/components/GitPanel";
 import { CodeExecutionPanel } from "@/components/CodeExecutionPanel";
+import { PackageInstallation } from "@/components/PackageInstallation";
 import SettingsModal from "@/components/SettingsModal";
 import PackageManagerModal from "@/components/PackageManagerModal";
 import TemplateSelectorModal from "@/components/TemplateSelectorModal";
@@ -74,6 +75,9 @@ export default function IDE() {
   const [isGenerating, setIsGenerating] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const completionHandledRef = useRef<boolean>(false); // ✅ Prevent duplicate completion calls
+  
+  // Package installation state
+  const [packageInstallations, setPackageInstallations] = useState<any[]>([]);
 
   // Fetch files
   const { data: files = [] } = useQuery<any[]>({
@@ -294,6 +298,51 @@ export default function IDE() {
           content: data.message,
         },
       ]);
+    });
+
+    // Package installation event listeners
+    ws.on("package_install_start", (data: any) => {
+      const newInstall = {
+        id: data.id,
+        packageManager: data.packageManager,
+        packages: data.packages,
+        status: "installing",
+        logs: [],
+        startedAt: new Date(),
+      };
+      setPackageInstallations((prev) => [newInstall, ...prev]);
+      addLog("info", `Installing ${data.packageManager} packages: ${data.packages.join(", ")}`);
+    });
+
+    ws.on("package_install_log", (data: any) => {
+      setPackageInstallations((prev) =>
+        prev.map((install) =>
+          install.id === data.id
+            ? { ...install, logs: [...install.logs, data.log] }
+            : install
+        )
+      );
+    });
+
+    ws.on("package_install_complete", (data: any) => {
+      setPackageInstallations((prev) =>
+        prev.map((install) =>
+          install.id === data.id
+            ? {
+                ...install,
+                status: data.success ? "completed" : "failed",
+                completedAt: new Date(),
+                error: data.error,
+              }
+            : install
+        )
+      );
+      
+      if (data.success) {
+        addLog("success", `Package installation completed successfully`);
+      } else {
+        addLog("error", `Package installation failed: ${data.error || "Unknown error"}`);
+      }
     });
 
     return () => {
@@ -742,6 +791,9 @@ export default function IDE() {
               <TabsTrigger value="logs" className="text-xs" data-testid="tab-logs">
                 Logs
               </TabsTrigger>
+              <TabsTrigger value="packages" className="text-xs" data-testid="tab-packages">
+                Packages
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="chat" className="flex-1 m-0 overflow-hidden">
               <ChatPanel
@@ -771,6 +823,9 @@ export default function IDE() {
             </TabsContent>
             <TabsContent value="logs" className="flex-1 m-0 overflow-hidden">
               <LogsPanel logs={logs} onClear={() => setLogs([])} />
+            </TabsContent>
+            <TabsContent value="packages" className="flex-1 m-0 overflow-hidden">
+              <PackageInstallation installations={packageInstallations} />
             </TabsContent>
           </Tabs>
         </ResizablePanel>
