@@ -10,6 +10,7 @@ import TerminalPanel from "@/components/TerminalPanel";
 import AgentStatePanel from "@/components/AgentStatePanel";
 import LogsPanel from "@/components/LogsPanel";
 import { GitPanel } from "@/components/GitPanel";
+import { CodeExecutionPanel } from "@/components/CodeExecutionPanel";
 import SettingsModal from "@/components/SettingsModal";
 import PackageManagerModal from "@/components/PackageManagerModal";
 import TemplateSelectorModal from "@/components/TemplateSelectorModal";
@@ -643,6 +644,9 @@ export default function IDE() {
               <TabsTrigger value="chat" className="text-xs" data-testid="tab-chat">
                 Chat
               </TabsTrigger>
+              <TabsTrigger value="execution" className="text-xs" data-testid="tab-execution">
+                Execution
+              </TabsTrigger>
               <TabsTrigger value="git" className="text-xs" data-testid="tab-git">
                 Git
               </TabsTrigger>
@@ -664,6 +668,12 @@ export default function IDE() {
                 isStreaming={isStreaming}
                 agentWorkflow={agentWorkflow}
                 onFileClick={handleFileClickFromWorkflow}
+              />
+            </TabsContent>
+            <TabsContent value="execution" className="flex-1 m-0 overflow-hidden">
+              <CodeExecutionPanel
+                workspaceId={WORKSPACE_ID}
+                selectedFileId={activeTabId}
               />
             </TabsContent>
             <TabsContent value="git" className="flex-1 m-0 overflow-hidden">
