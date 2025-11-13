@@ -147,6 +147,19 @@ export default function CodeEditor({
       userId: userId,
     });
 
+    // Monitor awareness changes for debugging (Task 7.6: User Presence System)
+    const awarenessChangeHandler = () => {
+      const states = provider.awareness.getStates();
+      const users = Array.from(states.entries()).map(([clientId, state]: [number, any]) => ({
+        clientId,
+        user: state.user,
+        hasCursor: !!state.cursor,
+        hasSelection: !!state.selection,
+      }));
+      console.log(`[Presence] Active users (${users.length}):`, users);
+    };
+    provider.awareness.on("change", awarenessChangeHandler);
+
     // Create Monaco binding
     const model = editorRef.current.getModel();
     if (model) {
@@ -172,6 +185,9 @@ export default function CodeEditor({
           bindingRef.current.destroy();
           bindingRef.current = null;
         }
+        
+        // Remove awareness change listener
+        provider.awareness.off("change", awarenessChangeHandler);
         
         // Clear awareness state for this tab's provider
         const tabProvider = providerCache.get(docKey);
