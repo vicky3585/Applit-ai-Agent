@@ -45,6 +45,8 @@ export default function CodeEditor({
   const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
   const bindingRef = useRef<MonacoBinding | null>(null);
+  const decorationsRef = useRef<Map<number, string[]>>(new Map()); // clientId -> decorationIds
+  const injectedColorsRef = useRef<Set<string>>(new Set()); // Track injected colors
 
   const handleTabClick = (tabId: string) => {
     setActiveTab(tabId);
@@ -157,6 +159,9 @@ export default function CodeEditor({
         hasSelection: !!state.selection,
       }));
       console.log(`[Presence] Active users (${users.length}):`, users);
+      
+      // Render cursor overlays for remote users (Task 7.7)
+      renderRemoteCursors(provider);
     };
     provider.awareness.on("change", awarenessChangeHandler);
 
@@ -178,6 +183,9 @@ export default function CodeEditor({
       };
       ytext.observe(updateHandler);
 
+      // Render initial cursors for existing collaborators
+      renderRemoteCursors(provider);
+
       // Cleanup on tab change - CRITICAL: Clear awareness to prevent ghost cursors
       return () => {
         ytext.unobserve(updateHandler);
@@ -188,6 +196,14 @@ export default function CodeEditor({
         
         // Remove awareness change listener
         provider.awareness.off("change", awarenessChangeHandler);
+        
+        // Clear cursor decorations
+        if (editorRef.current) {
+          decorationsRef.current.forEach((decorationIds) => {
+            editorRef.current?.removeDecorations(decorationIds);
+          });
+          decorationsRef.current.clear();
+        }
         
         // Clear awareness state for this tab's provider
         const tabProvider = providerCache.get(docKey);
@@ -244,6 +260,119 @@ export default function CodeEditor({
     }
 
     return colors[Math.abs(hash) % colors.length];
+  }
+
+  // Render colored cursor overlays for remote collaborators (Task 7.7)
+  function renderRemoteCursors(provider: WebsocketProvider) {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    if (!editor || !model) return;
+
+    const localClientId = provider.awareness.clientID;
+    const states = provider.awareness.getStates();
+
+    // Clear old decorations
+    decorationsRef.current.forEach((decorationIds) => {
+      editor.removeDecorations(decorationIds);
+    });
+    decorationsRef.current.clear();
+
+    // Render cursor for each remote user
+    states.forEach((state: any, clientId: number) => {
+      // Skip local user
+      if (clientId === localClientId) return;
+      if (!state.user || !state.cursor) return;
+
+      const { user, cursor } = state;
+      let { anchor, head } = cursor;
+
+      // Normalize anchor/head to ensure valid range (Task 7.7 fix)
+      if (anchor > head) {
+        [anchor, head] = [head, anchor];
+      }
+
+      // Convert text offset to Monaco position
+      const anchorPos = model.getPositionAt(anchor);
+      const headPos = model.getPositionAt(head);
+
+      // Generate unique class names for this user's color
+      const colorId = user.color.replace('#', '');
+      const selectionClass = `remote-selection-${colorId}`;
+      const cursorClass = `remote-cursor-${colorId}`;
+
+      // Inject CSS for this color if not already injected
+      injectCursorStyles(user.color, colorId);
+
+      const decorations: editor.IModelDeltaDecoration[] = [];
+
+      // Add selection decoration if there's a selection
+      if (anchor !== head) {
+        decorations.push({
+          range: new monacoInstance!.Range(
+            anchorPos.lineNumber,
+            anchorPos.column,
+            headPos.lineNumber,
+            headPos.column
+          ),
+          options: {
+            className: selectionClass,
+            stickiness: monacoInstance!.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+            hoverMessage: { value: `${user.name}'s selection` },
+          },
+        });
+      }
+
+      // Add cursor decoration
+      decorations.push({
+        range: new monacoInstance!.Range(
+          headPos.lineNumber,
+          headPos.column,
+          headPos.lineNumber,
+          headPos.column
+        ),
+        options: {
+          className: cursorClass,
+          stickiness: monacoInstance!.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges,
+          hoverMessage: { value: user.name },
+        },
+      });
+
+      // Apply decorations and store IDs
+      const decorationIds = editor.deltaDecorations([], decorations);
+      decorationsRef.current.set(clientId, decorationIds);
+    });
+  }
+
+  // Inject CSS for cursor colors dynamically (Task 7.7 fix: unique classes per color)
+  function injectCursorStyles(color: string, colorId: string) {
+    // Check if already injected
+    if (injectedColorsRef.current.has(colorId)) return;
+
+    const styleId = `cursor-style-${colorId}`;
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .remote-selection-${colorId} {
+        background-color: ${color}33 !important;
+      }
+      .remote-cursor-${colorId} {
+        position: relative;
+      }
+      .remote-cursor-${colorId}::before {
+        content: '';
+        position: absolute;
+        width: 2px !important;
+        height: 1.2em;
+        background-color: ${color} !important;
+        border-left: 2px solid ${color} !important;
+        z-index: 10;
+        pointer-events: none;
+      }
+    `;
+    document.head.appendChild(style);
+    injectedColorsRef.current.add(colorId);
   }
 
   return (
