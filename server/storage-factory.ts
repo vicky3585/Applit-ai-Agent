@@ -3,24 +3,36 @@
  * 
  * Creates the appropriate storage implementation based on environment.
  * - Replit: Uses in-memory storage (MemStorage)
- * - Local: Uses PostgreSQL storage (to be implemented)
+ * - Local: Uses PostgreSQL storage (PostgresStorage)
  */
 
-import { ENV_CONFIG } from "@shared/environment";
+import { ENV_CONFIG, validateDatabaseAccess } from "@shared/environment";
 import { MemStorage, type IStorage } from "./storage";
 
 /**
  * Create and initialize storage instance based on environment
  */
 async function createStorage(): Promise<IStorage> {
-  const storage = new MemStorage();
+  let storage: IStorage;
   
-  if (ENV_CONFIG.database.mode === "replit") {
-    console.log("[Storage] Using in-memory storage (Replit mode)");
+  if (ENV_CONFIG.database.mode === "local") {
+    // Check if PostgreSQL is actually accessible
+    const dbAvailable = await validateDatabaseAccess();
+    
+    if (dbAvailable) {
+      console.log("[Storage] Using PostgreSQL storage (local mode)");
+      
+      // Lazy import to avoid DATABASE_URL requirement in Replit mode
+      const { PostgresStorage } = await import("./pg-storage");
+      storage = new PostgresStorage();
+    } else {
+      console.log("[Storage] PostgreSQL not accessible, falling back to in-memory");
+      storage = new MemStorage();
+    }
   } else {
-    // For local mode with PostgreSQL
-    // TODO: Implement PostgreSQL storage when deployed locally
-    console.log("[Storage] PostgreSQL not yet implemented, falling back to in-memory");
+    // Replit mode - use in-memory storage
+    console.log("[Storage] Using in-memory storage (Replit mode)");
+    storage = new MemStorage();
   }
   
   // Initialize storage (creates default workspace and files)

@@ -18,7 +18,14 @@ export class FileSync {
   }
 
   /**
-   * Sync a single file to disk
+   * Get workspace-specific directory path
+   */
+  private getWorkspacePath(workspaceId: string): string {
+    return path.join(this.workspaceRoot, workspaceId);
+  }
+
+  /**
+   * Sync a single file to disk in workspace-specific directory
    */
   async syncFile(file: File): Promise<void> {
     if (!ENV_CONFIG.sandbox.available) {
@@ -28,7 +35,9 @@ export class FileSync {
     }
 
     try {
-      const fullPath = path.join(this.workspaceRoot, file.path);
+      // Files go in /workspace/{workspaceId}/{filePath}
+      const workspacePath = this.getWorkspacePath(file.workspaceId);
+      const fullPath = path.join(workspacePath, file.path);
       const dir = path.dirname(fullPath);
 
       // Create directory if it doesn't exist
@@ -66,15 +75,16 @@ export class FileSync {
   }
 
   /**
-   * Delete a file from disk
+   * Delete a file from disk (workspace-aware)
    */
-  async deleteFile(filePath: string): Promise<void> {
+  async deleteFile(workspaceId: string, filePath: string): Promise<void> {
     if (!ENV_CONFIG.sandbox.available) {
       return;
     }
 
     try {
-      const fullPath = path.join(this.workspaceRoot, filePath);
+      const workspacePath = this.getWorkspacePath(workspaceId);
+      const fullPath = path.join(workspacePath, filePath);
       await fs.unlink(fullPath);
       console.log(`[FileSync] Deleted file from disk:`, fullPath);
     } catch (error: any) {
@@ -85,7 +95,8 @@ export class FileSync {
   }
 
   /**
-   * Initialize workspace directory structure
+   * Initialize workspace-specific directory structure
+   * Creates /workspace/{workspaceId} directory
    */
   async initializeWorkspace(workspaceId: string): Promise<void> {
     if (!ENV_CONFIG.sandbox.available) {
@@ -93,10 +104,31 @@ export class FileSync {
     }
 
     try {
-      await fs.mkdir(this.workspaceRoot, { recursive: true });
-      console.log(`[FileSync] Initialized workspace at:`, this.workspaceRoot);
+      const workspacePath = this.getWorkspacePath(workspaceId);
+      await fs.mkdir(workspacePath, { recursive: true });
+      console.log(`[FileSync] Initialized workspace at:`, workspacePath);
     } catch (error: any) {
       console.error(`[FileSync] Failed to initialize workspace:`, error.message);
+    }
+  }
+
+  /**
+   * Delete workspace-specific directory from disk
+   * Only deletes /workspace/{workspaceId}, safe for multi-workspace environments
+   */
+  async deleteWorkspace(workspaceId: string): Promise<void> {
+    if (!ENV_CONFIG.sandbox.available) {
+      return;
+    }
+
+    try {
+      const workspacePath = this.getWorkspacePath(workspaceId);
+      await fs.rm(workspacePath, { recursive: true, force: true });
+      console.log(`[FileSync] Deleted workspace directory:`, workspacePath);
+    } catch (error: any) {
+      if (error.code !== "ENOENT") {
+        console.error(`[FileSync] Failed to delete workspace ${workspaceId}:`, error.message);
+      }
     }
   }
 

@@ -10,6 +10,9 @@ import { randomUUID } from "crypto";
 import { fileSync } from "./file-sync";
 
 export interface IStorage {
+  // Initialization method
+  initialize(): Promise<void>;
+  
   // User methods
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -213,8 +216,8 @@ export class MemStorage implements IStorage {
   async deleteFile(id: string): Promise<void> {
     const file = this.files.get(id);
     if (file) {
-      // Delete from disk in local mode
-      await fileSync.deleteFile(file.path);
+      // Delete from disk in local mode (now workspace-aware)
+      await fileSync.deleteFile(file.workspaceId, file.path);
     }
     this.files.delete(id);
   }
