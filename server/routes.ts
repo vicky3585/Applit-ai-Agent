@@ -147,7 +147,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       // Execute workflow with real-time updates
-      await orchestrator.executeWorkflow(context, (state) => {
+      const result = await orchestrator.executeWorkflow(context, (state) => {
         // Update storage
         storage.createOrUpdateAgentExecution(
           workspaceId,
@@ -182,22 +182,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // Save final agent response
-      const finalMessage = `Workflow completed successfully! Generated ${files.length} file(s).`;
-      await storage.createChatMessage(
-        workspaceId,
-        "agent",
-        finalMessage
-      );
+      // Send appropriate final message based on workflow result
+      let finalMessage: string;
+      if (result.status === "complete") {
+        const fileCount = result.filesGenerated.length;
+        finalMessage = `Workflow completed successfully! Generated ${fileCount} file(s).`;
+        
+        await storage.createChatMessage(
+          workspaceId,
+          "agent",
+          finalMessage
+        );
 
-      broadcastToWorkspace(workspaceId, {
-        type: "chat_complete",
-        data: {
-          role: "agent",
-          content: finalMessage,
-          timestamp: new Date(),
-        },
-      }, clients);
+        broadcastToWorkspace(workspaceId, {
+          type: "chat_complete",
+          data: {
+            role: "agent",
+            content: finalMessage,
+            timestamp: new Date(),
+          },
+        }, clients);
+      } else {
+        // Workflow failed
+        const errorDetails = result.errors.length > 0 ? result.errors.join("; ") : "Unknown error";
+        finalMessage = `Workflow failed after ${result.attemptCount} attempt(s). Error: ${errorDetails}`;
+        
+        await storage.createChatMessage(
+          workspaceId,
+          "agent",
+          finalMessage
+        );
+
+        broadcastToWorkspace(workspaceId, {
+          type: "agent_error",
+          data: { message: finalMessage },
+        }, clients);
+      }
 
     } catch (error: any) {
       console.error("Agent processing error:", error);

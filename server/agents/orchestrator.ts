@@ -67,12 +67,12 @@ export class AgentOrchestrator {
       onStateUpdate({ ...state });
 
       // Step 2: Coding (with auto-fix loop)
-      state.currentStep = "coding";
       let codingSuccess = false;
       let lastError: string | null = null;
 
       while (state.attemptCount < this.maxAttempts && !codingSuccess) {
         state.attemptCount++;
+        state.currentStep = "coding"; // Reset to coding at start of each attempt
         state.logs.push(`[Coder] Attempt ${state.attemptCount}/${this.maxAttempts}...`);
         state.progress = 0.3 + (state.attemptCount / this.maxAttempts) * 0.3;
         onStateUpdate({ ...state });
