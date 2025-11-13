@@ -18,6 +18,7 @@ interface WSSharedDoc {
   doc: Y.Doc;
   awareness: awarenessProtocol.Awareness;
   conns: Map<WebSocket, Set<number>>;
+  saveTimeout?: NodeJS.Timeout; // Debounced persistence timeout
 }
 
 const docs: Map<string, WSSharedDoc> = new Map();
@@ -51,7 +52,7 @@ export class YjsProvider {
   /**
    * Setup WebSocket connection using canonical y-websocket protocol
    */
-  private setupWSConnection(conn: WebSocket, req: any) {
+  private async setupWSConnection(conn: WebSocket, req: any) {
     conn.binaryType = "arraybuffer";
 
     // Parse query parameters
@@ -63,8 +64,8 @@ export class YjsProvider {
 
     const fullDocName = `${workspaceId}:${docName}`;
 
-    // Get or create shared document
-    const doc = getYDoc(fullDocName);
+    // Get or create shared document (with persistence loading)
+    const doc = await getYDoc(fullDocName, workspaceId, this.storage);
     doc.conns.set(conn, new Set());
 
     // CRITICAL: Broadcast document updates to ALL connected clients
@@ -75,6 +76,16 @@ export class YjsProvider {
         syncProtocol.writeUpdate(encoder, update);
         send(doc, conn, encoding.toUint8Array(encoder));
       }
+      
+      // Debounced persistence: Save 5s after last update
+      if (doc.saveTimeout) {
+        clearTimeout(doc.saveTimeout);
+      }
+      doc.saveTimeout = setTimeout(() => {
+        this.persistDoc(workspaceId, docName, doc.doc).catch((err) => {
+          console.error(`[YjsProvider] Auto-save error for ${docName}:`, err);
+        });
+      }, 5000);
     };
     doc.doc.on("update", updateHandler);
 
@@ -146,7 +157,10 @@ export class YjsProvider {
       if (doc.conns.size === 0) {
         setTimeout(() => {
           if (doc.conns.size === 0) {
-            this.persistDoc(workspaceId, docName, doc.doc);
+            // Final save before cleanup
+            this.persistDoc(workspaceId, docName, doc.doc).catch((err) => {
+              console.error(`[YjsProvider] Final save error for ${docName}:`, err);
+            });
             docs.delete(fullDocName);
             doc.doc.destroy();
             console.log(`[YjsProvider] Cleaned up doc: ${fullDocName}`);
@@ -204,21 +218,23 @@ export class YjsProvider {
   }
 
   /**
-   * Persist document to database (placeholder - TODO: implement with PostgresStorage)
+   * Persist document to database
    */
   private async persistDoc(workspaceId: string, docName: string, doc: Y.Doc) {
     try {
       const state = Y.encodeStateAsUpdate(doc);
+      const stateVector = Y.encodeStateVector(doc);
       const stateBase64 = Buffer.from(state).toString("base64");
-      console.log(`[YjsProvider] Persisting ${docName} (${state.length} bytes) - skipped in memory mode`);
+      const stateVectorBase64 = Buffer.from(stateVector).toString("base64");
       
-      // TODO: Implement when PostgresStorage is active:
-      // await this.storage.saveYjsDocument({
-      //   workspaceId,
-      //   docName,
-      //   state: stateBase64,
-      //   stateVector: Buffer.from(Y.encodeStateVector(doc)).toString("base64"),
-      // });
+      await this.storage.upsertYjsDocument(
+        workspaceId,
+        docName,
+        stateBase64,
+        stateVectorBase64
+      );
+      
+      console.log(`[YjsProvider] Persisted ${docName} (${state.length} bytes)`);
     } catch (error) {
       console.error(`[YjsProvider] Failed to persist doc:`, error);
     }
@@ -247,23 +263,38 @@ export class YjsProvider {
 }
 
 /**
- * Helper: Get or create a shared Y.Doc
+ * Helper: Get or create a shared Y.Doc with persistence loading
  */
-function getYDoc(docName: string): WSSharedDoc {
-  let doc = docs.get(docName);
+async function getYDoc(fullDocName: string, workspaceId: string, storage: IStorage): Promise<WSSharedDoc> {
+  let doc = docs.get(fullDocName);
 
   if (!doc) {
     const ydoc = new Y.Doc();
     const awareness = new awarenessProtocol.Awareness(ydoc);
 
+    // Extract filename from "workspace:filename" format
+    const docName = fullDocName.split(":")[1];
+
     doc = {
-      name: docName,
+      name: fullDocName,
       doc: ydoc,
       awareness,
       conns: new Map(),
     };
 
-    docs.set(docName, doc);
+    // Load persisted state from database using extracted filename
+    const persistedDoc = await storage.getYjsDocument(workspaceId, docName);
+    if (persistedDoc && persistedDoc.state) {
+      try {
+        const state = Buffer.from(persistedDoc.state, "base64");
+        Y.applyUpdate(ydoc, state);
+        console.log(`[YjsProvider] Loaded persisted state for ${docName} (${state.length} bytes)`);
+      } catch (error) {
+        console.error(`[YjsProvider] Failed to load persisted state for ${docName}:`, error);
+      }
+    }
+
+    docs.set(fullDocName, doc);
   }
 
   return doc;

@@ -12,6 +12,7 @@ import {
   type CodeExecution,
   type WorkspaceSettings,
   type UpdateWorkspaceSettings,
+  type YjsDocument,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { fileSync } from "./file-sync";
@@ -88,6 +89,11 @@ export interface IStorage {
   // Settings methods
   getWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings | undefined>;
   upsertWorkspaceSettings(workspaceId: string, settings: UpdateWorkspaceSettings): Promise<WorkspaceSettings>;
+  
+  // Yjs document methods (Phase 7 - Multiplayer)
+  getYjsDocument(workspaceId: string, docName: string): Promise<YjsDocument | undefined>;
+  upsertYjsDocument(workspaceId: string, docName: string, state: string, stateVector: string): Promise<YjsDocument>;
+  deleteYjsDocument(workspaceId: string, docName: string): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -100,6 +106,7 @@ export class MemStorage implements IStorage {
   private packages: Map<string, Package>;
   private codeExecutions: Map<string, CodeExecution>;
   private workspaceSettings: Map<string, WorkspaceSettings>;
+  private yjsDocuments: Map<string, Map<string, YjsDocument>>; // workspace -> docName -> YjsDocument
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
 
@@ -113,6 +120,7 @@ export class MemStorage implements IStorage {
     this.packages = new Map();
     this.codeExecutions = new Map();
     this.workspaceSettings = new Map();
+    this.yjsDocuments = new Map();
   }
 
   /**
@@ -639,6 +647,58 @@ export class MemStorage implements IStorage {
       };
       this.workspaceSettings.set(id, newSettings);
       return newSettings;
+    }
+  }
+
+  // Yjs document methods (Phase 7 - Multiplayer)
+  async getYjsDocument(workspaceId: string, docName: string): Promise<YjsDocument | undefined> {
+    const workspaceDocs = this.yjsDocuments.get(workspaceId);
+    if (!workspaceDocs) {
+      return undefined;
+    }
+    return workspaceDocs.get(docName);
+  }
+
+  async upsertYjsDocument(workspaceId: string, docName: string, state: string, stateVector: string): Promise<YjsDocument> {
+    let workspaceDocs = this.yjsDocuments.get(workspaceId);
+    if (!workspaceDocs) {
+      workspaceDocs = new Map();
+      this.yjsDocuments.set(workspaceId, workspaceDocs);
+    }
+
+    const existing = workspaceDocs.get(docName);
+    
+    if (existing) {
+      const updated: YjsDocument = {
+        ...existing,
+        state,
+        stateVector,
+        updatedAt: new Date(),
+      };
+      workspaceDocs.set(docName, updated);
+      return updated;
+    } else {
+      const id = randomUUID();
+      const newDoc: YjsDocument = {
+        id,
+        workspaceId,
+        docName,
+        state,
+        stateVector,
+        updatedAt: new Date(),
+      };
+      workspaceDocs.set(docName, newDoc);
+      return newDoc;
+    }
+  }
+
+  async deleteYjsDocument(workspaceId: string, docName: string): Promise<void> {
+    const workspaceDocs = this.yjsDocuments.get(workspaceId);
+    if (workspaceDocs) {
+      workspaceDocs.delete(docName);
+      if (workspaceDocs.size === 0) {
+        this.yjsDocuments.delete(workspaceId);
+      }
     }
   }
 }
