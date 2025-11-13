@@ -186,6 +186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: state.status,
           current_step: state.currentStep,
           progress: state.progress,
+          attempt_count: state.attemptCount,
           logs: state.logs,
           files_generated: state.filesGenerated,
           errors: state.errors,
@@ -467,6 +468,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           status: "idle",
           current_step: "idle",
           progress: 0.0,
+          attempt_count: 0,
           logs: [],
           files_generated: [],
           errors: []
@@ -482,6 +484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: execution.status,
         current_step: execution.current_step,
         progress: execution.progress,
+        attempt_count: execution.attempt_count || 0,
         logs,
         files_generated,
         errors,
@@ -498,7 +501,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const execution = await storage.getAgentExecution(req.params.id);
       
       if (!execution) {
-        return res.status(404).json({ error: "No agent execution found" });
+        return res.json({ 
+          status: "idle",
+          files_generated: [],
+          logs: [],
+          errors: []
+        });
       }
       
       if (execution.status !== "complete" && execution.status !== "failed") {
@@ -642,6 +650,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: state.status,
               current_step: state.currentStep,
               progress: state.progress,
+              attempt_count: state.attemptCount,
               logs: state.logs,
               files_generated: state.filesGenerated,
               errors: state.errors,
