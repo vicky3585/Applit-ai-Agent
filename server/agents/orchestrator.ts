@@ -31,7 +31,6 @@ export class AgentOrchestrator {
   private plannerAgent: PlannerAgent;
   private coderAgent: CoderAgent;
   private testerAgent: TesterAgent;
-  private maxAttempts: number = 3;
 
   constructor(storage: IStorage) {
     this.storage = storage;
@@ -55,6 +54,20 @@ export class AgentOrchestrator {
     };
 
     try {
+      // Validate context
+      if (!context.prompt?.trim()) {
+        throw new Error("User prompt is required");
+      }
+
+      // Get max attempts from settings (per-workflow, not shared state)
+      const maxAttempts = context.settings?.maxAutoFixIterations 
+        ? Math.max(1, Math.min(20, context.settings.maxAutoFixIterations))
+        : 3;
+
+      state.logs.push(`[Orchestrator] Starting workflow with max ${maxAttempts} attempts`);
+      state.logs.push(`[Orchestrator] Model: ${context.settings?.aiModel || 'gpt-4'}`);
+      onStateUpdate({ ...state });
+
       // Step 1: Planning
       state.currentStep = "planning";
       state.progress = 0.1;
@@ -71,11 +84,11 @@ export class AgentOrchestrator {
       let codingSuccess = false;
       let lastError: string | null = null;
 
-      while (state.attemptCount < this.maxAttempts && !codingSuccess) {
+      while (state.attemptCount < maxAttempts && !codingSuccess) {
         state.attemptCount++;
         state.currentStep = "coding"; // Reset to coding at start of each attempt
-        state.logs.push(`[Coder] Attempt ${state.attemptCount}/${this.maxAttempts}...`);
-        state.progress = 0.3 + (state.attemptCount / this.maxAttempts) * 0.3;
+        state.logs.push(`[Coder] Attempt ${state.attemptCount}/${maxAttempts}...`);
+        state.progress = 0.3 + (state.attemptCount / maxAttempts) * 0.3;
         onStateUpdate({ ...state });
 
         try {
@@ -125,19 +138,24 @@ export class AgentOrchestrator {
             state.logs.push(`[Tester] Validation failed: ${testResult.error}`);
             lastError = testResult.error;
             
-            if (state.attemptCount < this.maxAttempts) {
+            if (state.attemptCount < maxAttempts) {
               state.logs.push(`[Orchestrator] Retrying with fixes...`);
             } else {
-              state.logs.push(`[Orchestrator] Max attempts (${this.maxAttempts}) reached`);
-              state.errors.push(`Failed after ${this.maxAttempts} attempts: ${testResult.error}`);
+              state.logs.push(`[Orchestrator] Max attempts (${maxAttempts}) reached`);
+              state.errors.push(`Failed after ${maxAttempts} attempts: ${testResult.error}`);
             }
           }
         } catch (error: any) {
-          lastError = error.message;
-          state.logs.push(`[Coder] Error: ${error.message}`);
+          lastError = error.message || "Unknown error occurred";
+          state.logs.push(`[Coder] Error: ${lastError}`);
           
-          if (state.attemptCount >= this.maxAttempts) {
-            state.errors.push(`Code generation failed: ${error.message}`);
+          // Log additional error details for debugging
+          if (error.stack) {
+            console.error("[Orchestrator] Full error:", error.stack);
+          }
+          
+          if (state.attemptCount >= maxAttempts) {
+            state.errors.push(`Code generation failed after ${maxAttempts} attempts: ${lastError}`);
           }
         }
 
@@ -162,14 +180,29 @@ export class AgentOrchestrator {
     } catch (error: any) {
       state.status = "failed";
       state.currentStep = "idle";
-      state.errors.push(error.message);
-      state.logs.push(`[Orchestrator] Fatal error: ${error.message}`);
+      
+      // Provide more helpful error messages
+      const errorMessage = error.message || "Unknown error occurred";
+      state.errors.push(errorMessage);
+      state.logs.push(`[Orchestrator] Fatal error: ${errorMessage}`);
+      
+      // Log full error for debugging
+      if (error.stack) {
+        console.error("[Orchestrator] Full error stack:", error.stack);
+      }
+      
+      // Add troubleshooting hints
+      if (errorMessage.includes("API key")) {
+        state.logs.push("[Hint] Please check your OpenAI API key in Settings");
+      } else if (errorMessage.includes("rate limit")) {
+        state.logs.push("[Hint] API rate limit reached. Please try again in a moment");
+      } else if (errorMessage.includes("timeout")) {
+        state.logs.push("[Hint] Request timed out. Try with a simpler prompt");
+      }
+      
       onStateUpdate({ ...state });
       return state;
     }
   }
 
-  setMaxAttempts(max: number) {
-    this.maxAttempts = max;
-  }
 }

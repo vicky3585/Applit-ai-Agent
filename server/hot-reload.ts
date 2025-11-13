@@ -112,15 +112,19 @@ let hotReloadManager: HotReloadManager | null = null;
 
 export function getHotReloadManager(): HotReloadManager {
   if (!hotReloadManager) {
-    // Enable hot reload only in local environment
-    const enabled = process.env.NODE_ENV === "local";
+    // Enable hot reload in development environments
+    const enabled = process.env.NODE_ENV === "development" || process.env.NODE_ENV === "local";
+    
+    const workspaceRoot = process.env.NODE_ENV === "local" 
+      ? "/tmp/ide-workspaces"
+      : process.env.TMPDIR || "/tmp/ide-workspaces";
 
     hotReloadManager = new HotReloadManager({
-      workspaceRoot: "/tmp/ide-workspaces",
+      workspaceRoot,
       enabled,
     });
 
-    console.log(`[HotReload] Initialized (enabled: ${enabled})`);
+    console.log(`[HotReload] Initialized (enabled: ${enabled}, root: ${workspaceRoot})`);
   }
 
   return hotReloadManager;

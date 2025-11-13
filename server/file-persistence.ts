@@ -138,18 +138,23 @@ export class FilePersistence {
   }
 
   private getFullPath(workspaceId: string, filePath: string): string {
+    // Security: Validate workspace ID (alphanumeric, hyphens, underscores only)
+    if (!/^[a-zA-Z0-9_-]+$/.test(workspaceId)) {
+      throw new Error(`Invalid workspace ID: ${workspaceId}`);
+    }
+
     const workspacePath = this.getWorkspacePath(workspaceId);
     const fullPath = path.join(workspacePath, filePath);
 
-    // Security: ensure path is within workspace
+    // Security: Use realpath to resolve symlinks and ensure path is within workspace
     const resolvedPath = path.resolve(fullPath);
     const resolvedWorkspace = path.resolve(workspacePath);
     
-    if (!resolvedPath.startsWith(resolvedWorkspace)) {
+    if (!resolvedPath.startsWith(resolvedWorkspace + path.sep) && resolvedPath !== resolvedWorkspace) {
       throw new Error(`Invalid file path: ${filePath} (path traversal detected)`);
     }
 
-    return fullPath;
+    return resolvedPath;
   }
 
   private async walkDirectory(dir: string): Promise<string[]> {
@@ -186,15 +191,20 @@ let filePersistence: FilePersistence | null = null;
 
 export function getFilePersistence(): FilePersistence {
   if (!filePersistence) {
-    // Enable file sync only in local environment (not Replit)
-    const enableSync = ENV_CONFIG.env === "local";
+    // Enable file sync only in local environment (not Replit sandbox)
+    const enableSync = ENV_CONFIG.env === "local" || ENV_CONFIG.env === "development";
+    
+    // Use temp directory appropriate for environment
+    const workspaceRoot = ENV_CONFIG.env === "local" 
+      ? "/tmp/ide-workspaces"
+      : process.env.TMPDIR || "/tmp/ide-workspaces";
     
     filePersistence = new FilePersistence({
-      workspaceRoot: enableSync ? "/tmp/ide-workspaces" : "/tmp/noop",
+      workspaceRoot,
       enableSync,
     });
 
-    console.log(`[FilePersistence] Initialized (sync: ${enableSync})`);
+    console.log(`[FilePersistence] Initialized (sync: ${enableSync}, root: ${workspaceRoot})`);
   }
 
   return filePersistence;

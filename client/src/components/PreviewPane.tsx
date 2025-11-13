@@ -3,6 +3,7 @@ import { RefreshCw, ExternalLink, AlertCircle, Loader2, Globe } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { WebSocketClient } from "@/lib/websocket";
 
 interface PreviewPaneProps {
   workspaceId: string;
@@ -13,8 +14,9 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [customUrl, setCustomUrl] = useState("");
+  const [customUrlInput, setCustomUrlInput] = useState("");
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const wsRef = useRef<WebSocketClient | null>(null);
 
   useEffect(() => {
     // Auto-detect preview URL based on environment
@@ -25,20 +27,21 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
   useEffect(() => {
     if (!autoReload) return;
 
-    // This will be enhanced later with WebSocket connection
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible" && iframeRef.current) {
-        // Refresh preview when tab becomes visible
-        handleRefresh();
-      }
-    };
+    // Connect to WebSocket for hot reload notifications
+    const ws = new WebSocketClient(workspaceId);
+    wsRef.current = ws;
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    
+    ws.on("hot_reload", (data: any) => {
+      console.log("[PreviewPane] File changed:", data.file);
+      // Auto-refresh preview when files change
+      handleRefresh();
+    });
+
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      ws.disconnect();
+      wsRef.current = null;
     };
-  }, [autoReload]);
+  }, [workspaceId, autoReload]);
 
   const detectPreviewUrl = async () => {
     setLoading(true);
@@ -84,8 +87,9 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
 
   const handleCustomUrlSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (customUrl.trim()) {
-      setPreviewUrl(customUrl.trim());
+    if (customUrlInput.trim()) {
+      setPreviewUrl(customUrlInput.trim());
+      setCustomUrlInput(""); // Clear input after submission
       setError(null);
     }
   };
@@ -134,14 +138,20 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
       <div className="border-b px-4 py-2">
         <form onSubmit={handleCustomUrlSubmit} className="flex gap-2">
           <Input
-            value={customUrl || previewUrl}
-            onChange={(e) => setCustomUrl(e.target.value)}
+            value={customUrlInput || previewUrl}
+            onChange={(e) => setCustomUrlInput(e.target.value)}
+            onFocus={() => {
+              // Pre-fill with current URL when focused
+              if (!customUrlInput && previewUrl) {
+                setCustomUrlInput(previewUrl);
+              }
+            }}
             placeholder="Enter preview URL or leave empty for auto-detect"
             className="h-8 text-xs font-mono"
             data-testid="input-preview-url"
           />
-          {customUrl && (
-            <Button type="submit" size="sm" className="h-8" data-testid="button-load-url">
+          {customUrlInput && customUrlInput !== previewUrl && (
+            <Button type="submit" size="sm" className="h-8" data-testid="button-submit-url">
               Load
             </Button>
           )}
