@@ -60,12 +60,13 @@ export class AgentOrchestrator {
       }
 
       // Get max attempts from settings (per-workflow, not shared state)
-      const maxAttempts = context.settings?.maxAutoFixIterations 
-        ? Math.max(1, Math.min(20, context.settings.maxAutoFixIterations))
+      const maxIterations = context.settings?.maxIterations 
+        ? parseInt(context.settings.maxIterations)
         : 3;
+      const maxAttempts = Math.max(1, Math.min(20, maxIterations));
 
       state.logs.push(`[Orchestrator] Starting workflow with max ${maxAttempts} attempts`);
-      state.logs.push(`[Orchestrator] Model: ${context.settings?.aiModel || 'gpt-4'}`);
+      state.logs.push(`[Orchestrator] Model: ${context.settings?.modelProvider || 'openai'}`);
       onStateUpdate({ ...state });
 
       // Step 1: Planning
