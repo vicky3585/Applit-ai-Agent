@@ -29,9 +29,13 @@ export interface ContainerInfo {
   lastActivityAt: Date;
 }
 
+// Primary polyglot image (all runtimes in one image)
+const POLYGLOT_IMAGE = "webide-polyglot:latest";
+
+// Fallback images for when polyglot image is not available
 const RUNTIME_IMAGES = {
-  node: "node:20-alpine",
-  python: "python:3.11-alpine",
+  node: "node:20-bullseye",
+  python: "python:3.11-bullseye",
   fullstack: "node:20-bullseye",
 } as const;
 
@@ -72,13 +76,33 @@ export class SandboxManager {
   }
 
   /**
+   * Select Docker image - try polyglot first with auto-pull, fall back to runtime-specific
+   */
+  private async selectImage(runtime: keyof typeof RUNTIME_IMAGES): Promise<string> {
+    // Try to use polyglot image (pull if needed)
+    try {
+      await this.ensureImage(POLYGLOT_IMAGE);
+      console.log(`[SandboxManager] Using polyglot image: ${POLYGLOT_IMAGE}`);
+      return POLYGLOT_IMAGE;
+    } catch (error: any) {
+      // Polyglot image not available (doesn't exist in registry or build failed)
+      console.log(`[SandboxManager] Polyglot image unavailable, using fallback: ${error.message}`);
+      const fallbackImage = RUNTIME_IMAGES[runtime];
+      console.log(`[SandboxManager] Selected fallback: ${fallbackImage}`);
+      return fallbackImage;
+    }
+  }
+
+  /**
    * Create and start a container for a workspace
    */
   async createContainer(config: SandboxConfig): Promise<string> {
     const { workspaceId, runtime, memoryLimit = "512m", cpuLimit = 1 } = config;
     const containerName = this.getContainerName(workspaceId);
     const workspacePath = this.getWorkspacePath(workspaceId);
-    const image = RUNTIME_IMAGES[runtime];
+    
+    // Try polyglot image first, fall back to runtime-specific image
+    let image = await this.selectImage(runtime);
 
     try {
       console.log(`[SandboxManager] Creating container for workspace ${workspaceId}`);

@@ -1,0 +1,132 @@
+# Polyglot Development Image
+# Supports: Node.js, Python, Go, Rust, C/C++, Java, Ruby, PHP
+# Base: Debian Bullseye for stability and compatibility
+# Single-stage build to preserve all installations
+
+FROM debian:bullseye
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PATH="/root/.cargo/bin:/usr/local/go/bin:$PATH"
+
+# ======================
+# Essential Tools & Dependencies
+# ======================
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    git \
+    ca-certificates \
+    gnupg \
+    lsb-release \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    vim \
+    nano \
+    tmux \
+    htop \
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# ======================
+# Node.js 20.x
+# ======================
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get update \
+    && apt-get install -y nodejs \
+    && npm install -g npm@latest tsx typescript \
+    && npm cache clean --force \
+    && rm -rf /var/lib/apt/lists/*
+
+# ======================
+# Python 3.x (Debian default, usually 3.9)
+# ======================
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    && pip3 install --no-cache-dir --upgrade pip setuptools wheel \
+    && rm -rf /var/lib/apt/lists/*
+
+# ======================
+# Go 1.21
+# ======================
+ENV GO_VERSION=1.21.5
+RUN wget -q https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz \
+    && tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz \
+    && rm go${GO_VERSION}.linux-amd64.tar.gz
+
+# ======================
+# Rust (latest stable)
+# ======================
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+
+# ======================
+# Java (OpenJDK 17)
+# ======================
+RUN apt-get update && apt-get install -y \
+    openjdk-17-jdk \
+    maven \
+    && rm -rf /var/lib/apt/lists/*
+
+# ======================
+# C/C++ (GCC/G++) - Already installed via build-essential
+# ======================
+RUN apt-get update && apt-get install -y \
+    gdb \
+    make \
+    cmake \
+    && rm -rf /var/lib/apt/lists/*
+
+# ======================
+# Ruby
+# ======================
+RUN apt-get update && apt-get install -y \
+    ruby \
+    ruby-dev \
+    && gem install bundler \
+    && rm -rf /var/lib/apt/lists/*
+
+# ======================
+# PHP
+# ======================
+RUN apt-get update && apt-get install -y \
+    php \
+    php-cli \
+    php-mbstring \
+    php-xml \
+    composer \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create workspace directory
+RUN mkdir -p /workspace
+
+# Set working directory
+WORKDIR /workspace
+
+# Verify all installations
+RUN echo "=== Verifying Installations ===" && \
+    node --version && \
+    npm --version && \
+    python3 --version && \
+    go version && \
+    . $HOME/.cargo/env && rustc --version && \
+    . $HOME/.cargo/env && cargo --version && \
+    java -version && \
+    gcc --version && \
+    g++ --version && \
+    ruby --version && \
+    php --version && \
+    echo "=== All runtimes installed successfully ==="
+
+# Default command
+CMD ["/bin/bash"]
+
+# Labels
+LABEL maintainer="AI Web IDE"
+LABEL description="Polyglot development image with Node.js, Python, Go, Rust, Java, C/C++, Ruby, PHP"
+LABEL version="1.0.0"

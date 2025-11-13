@@ -2,7 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { storagePromise } from "./storage-factory";
-import { shutdownSandbox } from "./sandbox";
+import { shutdownSandbox, sandbox } from "./sandbox";
 
 const app = express();
 
@@ -51,8 +51,12 @@ app.use((req, res, next) => {
 (async () => {
   // Wait for storage initialization before starting server
   log("Initializing storage...");
-  await storagePromise;
+  const storage = await storagePromise;
   log("Storage ready");
+
+  // Inject storage into sandbox for multi-language execution
+  sandbox.setStorage(storage);
+  log("Sandbox configured with storage");
 
   const server = await registerRoutes(app);
 

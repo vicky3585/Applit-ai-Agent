@@ -2,13 +2,14 @@
  * Code Execution Sandbox
  * 
  * Provides secure code execution with environment-aware implementation:
- * - Local: Uses Docker containers
+ * - Local: Uses Docker containers with multi-language support
  * - Replit: Uses mock sandbox (logs commands without execution)
  */
 
 import Docker from "dockerode";
 import { ENV_CONFIG, isServiceAvailable } from "@shared/environment";
 import { getSandboxManager } from "./sandbox-manager";
+import type { IStorage } from "./storage";
 
 export interface ExecutionResult {
   success: boolean;
@@ -20,18 +21,24 @@ export interface ExecutionResult {
 export interface ISandbox {
   executeCommand(command: string, workspaceId: string): Promise<ExecutionResult>;
   executeCommandArgv(argv: string[], workspaceId: string): Promise<ExecutionResult>;
-  executeFile(filePath: string, workspaceId: string): Promise<ExecutionResult>;
+  executeFile(filePath: string, workspaceId: string, languageHint?: string): Promise<ExecutionResult>;
   installPackages(packages: string[], packageManager: "npm" | "pip" | "apt", workspaceId: string): Promise<ExecutionResult>;
+  setStorage(storage: IStorage): void; // For injection
 }
 
 /**
- * Docker-based sandbox for local execution with proper lifecycle management
+ * Docker-based sandbox for local execution with multi-language support
  */
 class DockerSandbox implements ISandbox {
   private manager = getSandboxManager();
+  private storage: IStorage | null = null;
 
   constructor() {
-    console.log("[DockerSandbox] Using SandboxManager for container lifecycle");
+    console.log("[DockerSandbox] Using SandboxManager with multi-language execution");
+  }
+
+  setStorage(storage: IStorage): void {
+    this.storage = storage;
   }
 
   async executeCommand(command: string, workspaceId: string): Promise<ExecutionResult> {
@@ -44,7 +51,35 @@ class DockerSandbox implements ISandbox {
     return this.manager.executeInContainer(workspaceId, argv);
   }
 
-  async executeFile(filePath: string, workspaceId: string): Promise<ExecutionResult> {
+  async executeFile(filePath: string, workspaceId: string, languageHint?: string): Promise<ExecutionResult> {
+    // Use enhanced execution dispatcher if storage is available
+    if (this.storage) {
+      const { getExecutionDispatcher } = await import("./execution-dispatcher");
+      const dispatcher = getExecutionDispatcher(this.storage);
+      
+      const result = await dispatcher.executeFile({
+        workspaceId,
+        filePath,
+        languageHint,
+      });
+
+      // Convert enhanced result to basic ExecutionResult
+      return {
+        success: result.success,
+        output: result.output,
+        error: result.error,
+        exitCode: result.exitCode,
+      };
+    }
+
+    // Fallback to legacy execution for backward compatibility
+    return this.executeLegacy(filePath, workspaceId);
+  }
+
+  /**
+   * Legacy execution method (fallback)
+   */
+  private async executeLegacy(filePath: string, workspaceId: string): Promise<ExecutionResult> {
     const extension = filePath.split(".").pop();
     let command: string;
 
@@ -93,6 +128,12 @@ class DockerSandbox implements ISandbox {
  * Mock sandbox for Replit environment (logs only, no execution)
  */
 class MockSandbox implements ISandbox {
+  private storage: IStorage | null = null;
+
+  setStorage(storage: IStorage): void {
+    this.storage = storage;
+  }
+
   async executeCommand(command: string, workspaceId: string): Promise<ExecutionResult> {
     console.log(`[MockSandbox] Would execute command: ${command}`);
     return {
@@ -111,8 +152,8 @@ class MockSandbox implements ISandbox {
     };
   }
 
-  async executeFile(filePath: string, workspaceId: string): Promise<ExecutionResult> {
-    console.log(`[MockSandbox] Would execute file: ${filePath}`);
+  async executeFile(filePath: string, workspaceId: string, languageHint?: string): Promise<ExecutionResult> {
+    console.log(`[MockSandbox] Would execute file: ${filePath} (hint: ${languageHint})`);
     return {
       success: true,
       output: `[Mock Execution] File execution logged: ${filePath}\n(Docker not available on Replit - deploy locally for real execution)`,
