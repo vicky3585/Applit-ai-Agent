@@ -229,10 +229,16 @@ export default function IDE() {
 
     ws.on("chat_stream", (data: any) => {
       setStreamingMessage((prev) => prev + data.content);
+      setIsStreaming(true);
     });
 
     ws.on("chat_complete", (data: any) => {
-      setChatMessages((prev) => [...prev, data]);
+      // Add the complete message with all streamed logs
+      const completeMessage = {
+        ...data,
+        content: streamingMessage || data.content,
+      };
+      setChatMessages((prev) => [...prev, completeMessage]);
       setStreamingMessage("");
       setIsStreaming(false);
     });
@@ -718,6 +724,7 @@ export default function IDE() {
                 onSendMessage={sendChatMessage}
                 onGenerateWithAI={handleGenerateWithAI}
                 isStreaming={isStreaming}
+                streamingMessage={streamingMessage}
                 agentWorkflow={agentWorkflow}
                 onFileClick={handleFileClickFromWorkflow}
               />

@@ -19,6 +19,7 @@ interface ChatPanelProps {
   onSendMessage?: (content: string) => void;
   onGenerateWithAI?: (prompt: string) => void;
   isStreaming?: boolean;
+  streamingMessage?: string;
   agentWorkflow?: AgentWorkflowState | null;
   onFileClick?: (path: string) => void;
 }
@@ -28,6 +29,7 @@ export default function ChatPanel({
   onSendMessage,
   onGenerateWithAI,
   isStreaming = false,
+  streamingMessage = "",
   agentWorkflow = null,
   onFileClick,
 }: ChatPanelProps) {
@@ -40,7 +42,7 @@ export default function ChatPanel({
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, streamingMessage]);
 
   const handleSend = () => {
     if (input.trim() && !isStreaming && !isGenerating) {
@@ -135,16 +137,21 @@ export default function ChatPanel({
             </div>
           )}
           
-          {isStreaming && !isGenerating && (
-            <div className="flex gap-3">
+          {isStreaming && streamingMessage && (
+            <div className="flex gap-3" data-testid="streaming-message">
               <Avatar className="w-8 h-8">
                 <AvatarFallback className="bg-primary text-primary-foreground">
                   <Bot className="w-4 h-4" />
                 </AvatarFallback>
               </Avatar>
-              <div className="bg-muted rounded-lg px-4 py-2 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span className="text-sm">Thinking...</span>
+              <div className="max-w-[80%] rounded-lg px-4 py-2 bg-muted/60 border border-muted">
+                <div className="flex items-center gap-2 mb-2">
+                  <Loader2 className="w-3 h-3 animate-spin text-primary" />
+                  <span className="text-xs font-medium text-muted-foreground">Agent Working...</span>
+                </div>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap font-mono">
+                  {streamingMessage}
+                </p>
               </div>
             </div>
           )}
