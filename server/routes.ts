@@ -142,7 +142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         workspaceId,
         prompt: userMessage,
         existingFiles: files,
-        settings,
+        settings: settings || null,
         openai,
       };
 
