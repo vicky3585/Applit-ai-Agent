@@ -18,6 +18,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { WebSocketClient } from "@/lib/websocket";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { AgentWorkflowState, AgentStep } from "@shared/schema";
+import { useToast } from "@/hooks/use-toast";
 
 const WORKSPACE_ID = "default-workspace";
 
@@ -29,8 +31,17 @@ interface FileNode {
   children?: FileNode[];
 }
 
+// Centralized agent status derivation helper
+function deriveAgentStatus(workflowState: AgentWorkflowState | null): AgentStep {
+  if (!workflowState) return "idle";
+  if (workflowState.status === "complete") return "complete";
+  if (workflowState.status === "failed") return "failed";
+  return workflowState.current_step;
+}
+
 export default function IDE() {
-  const [agentStatus, setAgentStatus] = useState<"idle" | "planning" | "coding" | "testing" | "fixing">("idle");
+  const { toast } = useToast();
+  const [agentStatus, setAgentStatus] = useState<AgentStep>("idle");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState("chat");
   const [editorView, setEditorView] = useState<"custom" | "code-server" | "preview">("custom");
@@ -49,6 +60,12 @@ export default function IDE() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteFile, setDeleteFile] = useState<any | null>(null);
   const wsRef = useRef<WebSocketClient | null>(null);
+  
+  // Agent workflow state
+  const [agentWorkflow, setAgentWorkflow] = useState<AgentWorkflowState | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const completionHandledRef = useRef<boolean>(false); // ✅ Prevent duplicate completion calls
 
   // Fetch files
   const { data: files = [] } = useQuery<any[]>({
@@ -62,14 +79,140 @@ export default function IDE() {
       .then((messages) => setChatMessages(messages));
   }, []);
 
+  // Poll agent status when generating
+  useEffect(() => {
+    if (!isGenerating) {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      return;
+    }
+
+    let failureCount = 0;
+    const MAX_FAILURES = 5;
+
+    // Start polling every 2 seconds
+    const pollStatus = async () => {
+      try {
+        const response = await fetch(`/api/workspaces/${WORKSPACE_ID}/agent/status`);
+        if (response.ok) {
+          const status: AgentWorkflowState = await response.json();
+          failureCount = 0; // Reset on success
+          setAgentWorkflow(status);
+          setAgentStatus(deriveAgentStatus(status)); // ✅ Use centralized helper
+
+          // Stop polling if complete or failed (with deduplication)
+          if (status.status === "complete" || status.status === "failed") {
+            if (!completionHandledRef.current) {
+              completionHandledRef.current = true;
+              handleWorkflowCompletion(status);
+            }
+          }
+        } else {
+          failureCount++;
+          if (failureCount >= MAX_FAILURES) {
+            handlePollingFailure();
+          }
+        }
+      } catch (error) {
+        console.error("Failed to poll agent status:", error);
+        failureCount++;
+        if (failureCount >= MAX_FAILURES) {
+          handlePollingFailure();
+        }
+      }
+    };
+
+    // Poll immediately, then every 2 seconds
+    pollStatus();
+    pollingIntervalRef.current = setInterval(pollStatus, 2000);
+
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, [isGenerating, toast]);
+
+  const handleWorkflowCompletion = (status: AgentWorkflowState) => {
+    setIsGenerating(false);
+    setAgentStatus(deriveAgentStatus(status)); // ✅ Persist terminal state (complete/failed)
+    
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+
+    // Show completion toast
+    if (status.status === "complete") {
+      toast({
+        title: "Generation Complete",
+        description: `${status.files_generated.length} file(s) created successfully.`,
+      });
+      addLog("success", `Agent completed: ${status.files_generated.length} files generated`);
+    } else {
+      toast({
+        title: "Generation Failed",
+        description: status.errors[0] || "An error occurred during generation.",
+        variant: "destructive",
+      });
+      addLog("error", `Agent failed: ${status.errors[0] || "Unknown error"}`);
+    }
+
+    // Invalidate files query to refresh file list
+    queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+  };
+
+  const handlePollingFailure = () => {
+    setIsGenerating(false);
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    
+    // ✅ Don't fabricate workflow failure - just reset to idle with connection error
+    setAgentStatus("idle");
+    
+    toast({
+      title: "Connection Lost",
+      description: "Lost connection to agent service. The workflow may still be running.",
+      variant: "destructive",
+    });
+    addLog("error", "Connection lost - unable to get agent status after multiple attempts");
+  };
+
   // WebSocket connection
   useEffect(() => {
     const ws = new WebSocketClient(WORKSPACE_ID);
     wsRef.current = ws;
 
     ws.on("agent_state", (data: any) => {
-      setAgentStatus(data.status);
+      // ✅ Use centralized helper (accepts string and maps to AgentStep)
+      const workflow: AgentWorkflowState = {
+        status: data.status === "complete" || data.status === "failed" ? data.status : "processing",
+        current_step: data.status as AgentStep,
+        progress: 0.0,
+        logs: [],
+        files_generated: [],
+        errors: [],
+      };
+      setAgentStatus(deriveAgentStatus(workflow));
       addLog("info", `Agent state: ${data.status}`);
+    });
+
+    ws.on("agent_workflow", (data: AgentWorkflowState) => {
+      setAgentWorkflow(data);
+      setAgentStatus(deriveAgentStatus(data)); // ✅ Use centralized helper
+      
+      // Handle completion via WebSocket (with deduplication)
+      if (data.status === "complete" || data.status === "failed") {
+        if (!completionHandledRef.current) {
+          completionHandledRef.current = true;
+          handleWorkflowCompletion(data);
+        }
+      }
     });
 
     ws.on("chat_message", (data: any) => {
@@ -114,6 +257,53 @@ export default function IDE() {
       workspaceId: WORKSPACE_ID,
       content,
     });
+  };
+
+  const generateWithAIMutation = useMutation({
+    mutationFn: async (prompt: string) => {
+      return apiRequest("POST", `/api/workspaces/${WORKSPACE_ID}/agent/generate`, { prompt });
+    },
+    onSuccess: () => {
+      // Clear previous workflow state and completion flag
+      setAgentWorkflow(null);
+      completionHandledRef.current = false; // ✅ Reset completion flag for new run
+      
+      // Immediately set processing state (don't wait for first poll)
+      const initialWorkflow: AgentWorkflowState = {
+        status: "processing",
+        current_step: "planning",
+        progress: 0.0,
+        logs: ["Starting AI agent workflow..."],
+        files_generated: [],
+        errors: [],
+      };
+      setAgentWorkflow(initialWorkflow);
+      setAgentStatus(deriveAgentStatus(initialWorkflow)); // ✅ Use centralized helper
+      setIsGenerating(true);
+      setRightPanelTab("chat"); // Switch to chat tab to show workflow
+      addLog("info", "Agent generation started");
+    },
+    onError: (error: any) => {
+      const errorMsg = error.response?.data?.error || error.message || "Failed to start agent generation";
+      toast({
+        title: "Generation Failed",
+        description: errorMsg,
+        variant: "destructive",
+      });
+      addLog("error", `Agent generation error: ${errorMsg}`);
+    },
+  });
+
+  const handleGenerateWithAI = (prompt: string) => {
+    generateWithAIMutation.mutate(prompt);
+  };
+
+  const handleFileClickFromWorkflow = async (path: string) => {
+    // Find file by path and open it
+    const file = files.find((f: any) => f.path === path);
+    if (file) {
+      await handleFileSelect(file);
+    }
   };
 
   const createFileMutation = useMutation({
@@ -457,21 +647,14 @@ export default function IDE() {
                   timestamp: new Date(msg.createdAt || msg.timestamp),
                 }))}
                 onSendMessage={sendChatMessage}
+                onGenerateWithAI={handleGenerateWithAI}
                 isStreaming={isStreaming}
+                agentWorkflow={agentWorkflow}
+                onFileClick={handleFileClickFromWorkflow}
               />
             </TabsContent>
             <TabsContent value="state" className="flex-1 m-0 overflow-hidden">
-              <AgentStatePanel
-                nodes={[
-                  { id: "1", name: "Planner", status: "completed" },
-                  { id: "2", name: "Coder", status: agentStatus === "coding" ? "active" : "pending" },
-                  { id: "3", name: "Tester", status: "pending" },
-                  { id: "4", name: "Auto-Fixer", status: "pending" },
-                ]}
-                checkpoints={[]}
-                currentIteration={0}
-                maxIterations={5}
-              />
+              <AgentStatePanel agentStatus={agentStatus} />
             </TabsContent>
             <TabsContent value="logs" className="flex-1 m-0 overflow-hidden">
               <LogsPanel logs={logs} onClear={() => setLogs([])} />

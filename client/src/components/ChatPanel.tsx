@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, Loader2 } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import AgentWorkflowCard from "@/components/AgentWorkflowCard";
+import { AgentWorkflowState } from "@shared/schema";
 
 interface Message {
   id: string;
@@ -15,16 +17,24 @@ interface Message {
 interface ChatPanelProps {
   messages?: Message[];
   onSendMessage?: (content: string) => void;
+  onGenerateWithAI?: (prompt: string) => void;
   isStreaming?: boolean;
+  agentWorkflow?: AgentWorkflowState | null;
+  onFileClick?: (path: string) => void;
 }
 
 export default function ChatPanel({
   messages = [],
   onSendMessage,
+  onGenerateWithAI,
   isStreaming = false,
+  agentWorkflow = null,
+  onFileClick,
 }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  
+  const isGenerating = agentWorkflow?.status === "processing";
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -33,14 +43,27 @@ export default function ChatPanel({
   }, [messages]);
 
   const handleSend = () => {
-    if (input.trim() && !isStreaming) {
+    if (input.trim() && !isStreaming && !isGenerating) {
       onSendMessage?.(input);
       setInput("");
     }
   };
 
+  const handleGenerateWithAI = () => {
+    if (input.trim() && !isGenerating) {
+      onGenerateWithAI?.(input);
+      setInput("");
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Ctrl/Cmd + Enter for AI generation
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      handleGenerateWithAI();
+    }
+    // Regular Enter for chat message
+    else if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
@@ -95,7 +118,24 @@ export default function ChatPanel({
             </div>
           ))}
           
-          {isStreaming && (
+          {/* Agent workflow state (inline during generation) */}
+          {agentWorkflow && agentWorkflow.status !== "idle" && (
+            <div className="flex gap-3" data-testid="workflow-container">
+              <Avatar className="w-8 h-8">
+                <AvatarFallback className="bg-primary text-primary-foreground">
+                  <Bot className="w-4 h-4" />
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <AgentWorkflowCard 
+                  workflowState={agentWorkflow}
+                  onFileClick={onFileClick}
+                />
+              </div>
+            </div>
+          )}
+          
+          {isStreaming && !isGenerating && (
             <div className="flex gap-3">
               <Avatar className="w-8 h-8">
                 <AvatarFallback className="bg-primary text-primary-foreground">
@@ -112,24 +152,40 @@ export default function ChatPanel({
       </ScrollArea>
 
       <div className="border-t p-4">
-        <div className="flex gap-2">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask the AI agent to help with your code..."
-            className="min-h-24 resize-none"
-            disabled={isStreaming}
-            data-testid="textarea-chat-input"
-          />
-          <Button
-            onClick={handleSend}
-            disabled={!input.trim() || isStreaming}
-            className="h-24"
-            data-testid="button-send-message"
-          >
-            <Send className="w-4 h-4" />
-          </Button>
+        <div className="space-y-2">
+          {/* Generate with AI button (shown above input) */}
+          {onGenerateWithAI && input.trim() && !isGenerating && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleGenerateWithAI}
+              className="w-full gap-2"
+              data-testid="button-generate-ai"
+            >
+              <Sparkles className="w-4 h-4" />
+              Generate with AI (Ctrl+Enter)
+            </Button>
+          )}
+          
+          <div className="flex gap-2">
+            <Textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask the AI agent to help with your code... (Ctrl+Enter to generate)"
+              className="min-h-24 resize-none"
+              disabled={isStreaming || isGenerating}
+              data-testid="textarea-chat-input"
+            />
+            <Button
+              onClick={handleSend}
+              disabled={!input.trim() || isStreaming || isGenerating}
+              className="h-24"
+              data-testid="button-send-message"
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>

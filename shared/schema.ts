@@ -81,3 +81,22 @@ export type Workspace = typeof workspaces.$inferSelect;
 export type File = typeof files.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type AgentExecution = typeof agentExecutions.$inferSelect;
+
+// Agent Workflow State types (from Python agent service)
+export type AgentStep = "idle" | "planning" | "coding" | "testing" | "fixing" | "complete" | "failed";
+
+export interface AgentFileGenerated {
+  path: string;
+  content: string;
+  language?: string;
+}
+
+export interface AgentWorkflowState {
+  status: "idle" | "processing" | "complete" | "failed";
+  current_step: AgentStep;
+  progress: number; // 0.0 to 1.0
+  logs: string[];
+  files_generated: AgentFileGenerated[];
+  errors: string[];
+  attempt_count?: number;
+}
