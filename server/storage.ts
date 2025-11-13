@@ -7,6 +7,7 @@ import {
   type AgentExecution,
   type Package,
   type InsertPackage,
+  type CodeExecution,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { fileSync } from "./file-sync";
@@ -52,6 +53,13 @@ export interface IStorage {
   getPackages(workspaceId: string): Promise<Package[]>;
   upsertPackage(workspaceId: string, name: string, version: string | null, packageManager: string): Promise<Package>;
   deletePackage(id: string): Promise<void>;
+  
+  // Code execution methods
+  getCodeExecution(id: string): Promise<CodeExecution | undefined>;
+  getCodeExecutions(workspaceId: string): Promise<CodeExecution[]>;
+  createCodeExecution(workspaceId: string, filePath: string, language?: string): Promise<CodeExecution>;
+  updateCodeExecution(id: string, updates: Partial<Pick<CodeExecution, 'status' | 'output' | 'error' | 'exitCode' | 'completedAt'>>): Promise<CodeExecution | undefined>;
+  appendCodeExecutionOutput(id: string, chunk: string): Promise<CodeExecution | undefined>;
 }
 
 export class MemStorage implements IStorage {
@@ -61,6 +69,7 @@ export class MemStorage implements IStorage {
   private chatMessages: Map<string, ChatMessage>;
   private agentExecutions: Map<string, AgentExecution>;
   private packages: Map<string, Package>;
+  private codeExecutions: Map<string, CodeExecution>;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
 
@@ -71,6 +80,7 @@ export class MemStorage implements IStorage {
     this.chatMessages = new Map();
     this.agentExecutions = new Map();
     this.packages = new Map();
+    this.codeExecutions = new Map();
   }
 
   /**
@@ -373,6 +383,73 @@ export class MemStorage implements IStorage {
 
   async deletePackage(id: string): Promise<void> {
     this.packages.delete(id);
+  }
+
+  // Code Execution Methods
+
+  async getCodeExecution(id: string): Promise<CodeExecution | undefined> {
+    return this.codeExecutions.get(id);
+  }
+
+  async getCodeExecutions(workspaceId: string): Promise<CodeExecution[]> {
+    return Array.from(this.codeExecutions.values())
+      .filter(execution => execution.workspaceId === workspaceId)
+      .sort((a, b) => {
+        const aTime = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+        const bTime = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+        return bTime - aTime; // Most recent first
+      });
+  }
+
+  async createCodeExecution(workspaceId: string, filePath: string, language?: string): Promise<CodeExecution> {
+    const id = randomUUID();
+    const execution: CodeExecution = {
+      id,
+      workspaceId,
+      filePath,
+      language: language || null,
+      status: 'running',
+      output: null,
+      error: null,
+      exitCode: null,
+      startedAt: new Date(),
+      completedAt: null,
+    };
+    this.codeExecutions.set(id, execution);
+    return execution;
+  }
+
+  async updateCodeExecution(
+    id: string, 
+    updates: Partial<Pick<CodeExecution, 'status' | 'output' | 'error' | 'exitCode' | 'completedAt'>>
+  ): Promise<CodeExecution | undefined> {
+    const execution = this.codeExecutions.get(id);
+    if (!execution) {
+      return undefined;
+    }
+
+    const updated: CodeExecution = {
+      ...execution,
+      ...updates,
+    };
+
+    this.codeExecutions.set(id, updated);
+    return updated;
+  }
+
+  async appendCodeExecutionOutput(id: string, chunk: string): Promise<CodeExecution | undefined> {
+    const execution = this.codeExecutions.get(id);
+    if (!execution) {
+      return undefined;
+    }
+
+    const updated: CodeExecution = {
+      ...execution,
+      output: (execution.output || '') + chunk,
+    };
+
+    this.codeExecutions.set(id, updated);
+    return updated;
   }
 }
 

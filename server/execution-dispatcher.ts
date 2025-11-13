@@ -25,6 +25,7 @@ export interface ExecutionOptions {
   languageHint?: string; // Optional explicit language hint
   timeout?: number;
   env?: Record<string, string>;
+  onOutput?: (chunk: string) => void; // Optional callback for streaming output
 }
 
 export interface ExecutionStageResult {
@@ -187,11 +188,12 @@ export class ExecutionDispatcher {
     const interpreterParts = capability.interpreter!.split(" ");
     const command = [...interpreterParts, `/workspace/${options.filePath}`];
 
-    // Execute
+    // Execute with optional streaming callback
     const result = await this.manager.executeInContainer(
       options.workspaceId,
       command,
-      "fullstack"
+      "fullstack",
+      options.onOutput
     );
 
     stages.push({
@@ -275,10 +277,12 @@ export class ExecutionDispatcher {
     
     const runCommand = capability.runCommand!(outputPath, runContext);
 
+    // Execute with optional streaming callback (only for execution, not compilation)
     const runResult = await this.manager.executeInContainer(
       options.workspaceId,
       runCommand,
-      "fullstack"
+      "fullstack",
+      options.onOutput
     );
 
     stages.push({
@@ -310,10 +314,12 @@ export class ExecutionDispatcher {
     const script = capability.defaultScript || "start";
     const command = [runner, script];
 
+    // Execute with optional streaming callback
     const result = await this.manager.executeInContainer(
       options.workspaceId,
       command,
-      "fullstack"
+      "fullstack",
+      options.onOutput
     );
 
     stages.push({

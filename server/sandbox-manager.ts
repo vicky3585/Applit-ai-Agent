@@ -251,9 +251,11 @@ export class SandboxManager {
   async executeInContainer(
     workspaceId: string,
     argv: string[],
-    runtime: "node" | "python" | "fullstack" = "fullstack"
+    runtime: "node" | "python" | "fullstack" = "fullstack",
+    onOutput?: (chunk: string) => void
   ): Promise<ExecutionResult> {
     const startTime = Date.now();
+    const MAX_OUTPUT_SIZE = 1024 * 1024; // 1 MB cap to prevent memory issues
     
     try {
       const container = await this.getOrCreateContainer({ workspaceId, runtime });
@@ -268,8 +270,31 @@ export class SandboxManager {
       const stream = await exec.start({ Detach: false });
 
       let output = "";
+      let truncated = false;
+      
       stream.on("data", (chunk: Buffer) => {
-        output += chunk.toString();
+        const chunkStr = chunk.toString();
+        
+        // Stream chunk to callback before buffering
+        if (onOutput && !truncated) {
+          onOutput(chunkStr);
+        }
+        
+        // Collect output with size limit
+        if (output.length + chunkStr.length <= MAX_OUTPUT_SIZE) {
+          output += chunkStr;
+        } else if (!truncated) {
+          truncated = true;
+          const remaining = MAX_OUTPUT_SIZE - output.length;
+          if (remaining > 0) {
+            output += chunkStr.substring(0, remaining);
+          }
+          const truncationMsg = "\n\n[Output truncated - exceeded 1 MB limit]";
+          output += truncationMsg;
+          if (onOutput) {
+            onOutput(truncationMsg);
+          }
+        }
       });
 
       await new Promise((resolve) => stream.on("end", resolve));

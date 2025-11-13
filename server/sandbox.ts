@@ -10,6 +10,7 @@ import Docker from "dockerode";
 import { ENV_CONFIG, isServiceAvailable } from "@shared/environment";
 import { getSandboxManager } from "./sandbox-manager";
 import type { IStorage } from "./storage";
+import type { ExecutionOptions } from "./execution-dispatcher";
 
 export interface ExecutionResult {
   success: boolean;
@@ -22,6 +23,7 @@ export interface ISandbox {
   executeCommand(command: string, workspaceId: string): Promise<ExecutionResult>;
   executeCommandArgv(argv: string[], workspaceId: string): Promise<ExecutionResult>;
   executeFile(filePath: string, workspaceId: string, languageHint?: string): Promise<ExecutionResult>;
+  executeFileWithOptions(options: ExecutionOptions): Promise<ExecutionResult>;
   installPackages(packages: string[], packageManager: "npm" | "pip" | "apt", workspaceId: string): Promise<ExecutionResult>;
   setStorage(storage: IStorage): void; // For injection
 }
@@ -52,16 +54,20 @@ class DockerSandbox implements ISandbox {
   }
 
   async executeFile(filePath: string, workspaceId: string, languageHint?: string): Promise<ExecutionResult> {
+    return this.executeFileWithOptions({
+      workspaceId,
+      filePath,
+      languageHint,
+    });
+  }
+
+  async executeFileWithOptions(options: ExecutionOptions): Promise<ExecutionResult> {
     // Use enhanced execution dispatcher if storage is available
     if (this.storage) {
       const { getExecutionDispatcher } = await import("./execution-dispatcher");
       const dispatcher = getExecutionDispatcher(this.storage);
       
-      const result = await dispatcher.executeFile({
-        workspaceId,
-        filePath,
-        languageHint,
-      });
+      const result = await dispatcher.executeFile(options);
 
       // Convert enhanced result to basic ExecutionResult
       return {
@@ -73,7 +79,7 @@ class DockerSandbox implements ISandbox {
     }
 
     // Fallback to legacy execution for backward compatibility
-    return this.executeLegacy(filePath, workspaceId);
+    return this.executeLegacy(options.filePath, options.workspaceId);
   }
 
   /**
@@ -153,10 +159,18 @@ class MockSandbox implements ISandbox {
   }
 
   async executeFile(filePath: string, workspaceId: string, languageHint?: string): Promise<ExecutionResult> {
-    console.log(`[MockSandbox] Would execute file: ${filePath} (hint: ${languageHint})`);
+    return this.executeFileWithOptions({
+      workspaceId,
+      filePath,
+      languageHint,
+    });
+  }
+
+  async executeFileWithOptions(options: ExecutionOptions): Promise<ExecutionResult> {
+    console.log(`[MockSandbox] Would execute file: ${options.filePath} (hint: ${options.languageHint})`);
     return {
       success: true,
-      output: `[Mock Execution] File execution logged: ${filePath}\n(Docker not available on Replit - deploy locally for real execution)`,
+      output: `[Mock Execution] File execution logged: ${options.filePath}\n(Docker not available on Replit - deploy locally for real execution)`,
       exitCode: 0,
     };
   }

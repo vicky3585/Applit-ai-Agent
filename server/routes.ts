@@ -364,6 +364,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // GET /api/workspaces/:id/executions - Get execution history
+  app.get("/api/workspaces/:id/executions", async (req, res) => {
+    try {
+      const executions = await storage.getCodeExecutions(req.params.id);
+      res.json(executions);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/workspaces/:id/executions/:executionId - Get specific execution
+  app.get("/api/workspaces/:id/executions/:executionId", async (req, res) => {
+    try {
+      const execution = await storage.getCodeExecution(req.params.executionId);
+      if (!execution) {
+        return res.status(404).json({ error: "Execution not found" });
+      }
+      res.json(execution);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/workspaces/:id/files/:fileId/execute", async (req, res) => {
     const file = await storage.getFile(req.params.fileId);
     if (!file) {
@@ -371,8 +394,142 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     try {
-      const result = await sandbox.executeFile(file.path, req.params.id);
-      res.json(result);
+      // Create execution record
+      const execution = await storage.createCodeExecution(
+        req.params.id,
+        file.path,
+        file.language || undefined
+      );
+
+      // Send execution started event
+      broadcastToWorkspace(req.params.id, {
+        type: "execution_started",
+        data: execution,
+      });
+
+      // Return execution ID immediately (execution happens in background)
+      res.json({ executionId: execution.id, status: 'running' });
+
+      // Setup streaming with throttling
+      let accumulatedOutput = "";
+      let totalBytes = 0;
+      let lastBroadcast = 0;
+      const BROADCAST_THROTTLE_MS = 100; // 100ms throttle
+      let broadcastTimer: NodeJS.Timeout | null = null;
+
+      const flushOutput = async () => {
+        if (accumulatedOutput) {
+          try {
+            broadcastToWorkspace(req.params.id, {
+              type: "execution_output",
+              data: {
+                executionId: execution.id,
+                chunk: accumulatedOutput,
+                totalBytes,
+              },
+            });
+
+            // Append to storage
+            await storage.appendCodeExecutionOutput(execution.id, accumulatedOutput);
+            accumulatedOutput = "";
+          } catch (error) {
+            console.error("[Execution] Failed to flush output:", error);
+            throw error;
+          }
+        }
+      };
+
+      const onOutput = (chunk: string) => {
+        accumulatedOutput += chunk;
+        totalBytes += chunk.length;
+        
+        const now = Date.now();
+        if (now - lastBroadcast >= BROADCAST_THROTTLE_MS) {
+          lastBroadcast = now;
+          if (broadcastTimer) {
+            clearTimeout(broadcastTimer);
+            broadcastTimer = null;
+          }
+          flushOutput().catch(err => console.error("Failed to flush output:", err));
+        } else if (!broadcastTimer) {
+          broadcastTimer = setTimeout(async () => {
+            broadcastTimer = null;
+            lastBroadcast = Date.now();
+            await flushOutput();
+          }, BROADCAST_THROTTLE_MS);
+        }
+      };
+
+      // Execute with streaming callback
+      sandbox.executeFileWithOptions({
+        workspaceId: req.params.id,
+        filePath: file.path,
+        languageHint: file.language || undefined,
+        onOutput,
+      })
+        .then(async (result) => {
+          try {
+            // Clear timer first
+            if (broadcastTimer) {
+              clearTimeout(broadcastTimer);
+              broadcastTimer = null;
+            }
+            
+            // Flush remaining output before marking complete
+            await flushOutput();
+
+            // Update execution record with final result (don't overwrite output - it was streamed incrementally)
+            await storage.updateCodeExecution(execution.id, {
+              status: 'completed',
+              error: result.error || null,
+              exitCode: result.exitCode !== undefined && result.exitCode !== null ? String(result.exitCode) : null,
+              completedAt: new Date(),
+            });
+
+            // Broadcast completion
+            const updated = await storage.getCodeExecution(execution.id);
+            broadcastToWorkspace(req.params.id, {
+              type: "execution_completed",
+              data: updated,
+            });
+          } catch (error: any) {
+            console.error("[Execution] Failed to complete execution:", error);
+            // Mark as failed if flush/update fails
+            await storage.updateCodeExecution(execution.id, {
+              status: 'failed',
+              error: `Completion error: ${error.message}`,
+              completedAt: new Date(),
+            });
+          }
+        })
+        .catch(async (error) => {
+          try {
+            // Clear timer first
+            if (broadcastTimer) {
+              clearTimeout(broadcastTimer);
+              broadcastTimer = null;
+            }
+            
+            // Flush remaining output before marking failed
+            await flushOutput();
+          } catch (flushError) {
+            console.error("[Execution] Failed to flush on error:", flushError);
+          }
+
+          // Update execution record with error
+          await storage.updateCodeExecution(execution.id, {
+            status: 'failed',
+            error: error.message,
+            completedAt: new Date(),
+          });
+
+          // Broadcast error
+          const updated = await storage.getCodeExecution(execution.id);
+          broadcastToWorkspace(req.params.id, {
+            type: "execution_failed",
+            data: updated,
+          });
+        });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
