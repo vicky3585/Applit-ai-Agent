@@ -439,7 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/preview/:workspaceId/*", async (req, res) => {
     try {
       const workspaceId = req.params.workspaceId;
-      const filePath = req.params[0]; // Everything after /preview/:workspaceId/
+      const filePath = (req.params as any)[0]; // Everything after /preview/:workspaceId/
       
       if (!filePath) {
         return res.status(400).send("File path required");
