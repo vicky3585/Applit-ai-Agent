@@ -125,91 +125,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     clients?: Set<WebSocket>
   ) {
     try {
-      // Update agent state to planning
-      await storage.createOrUpdateAgentExecution(
-        workspaceId,
-        "planning",
-        "Planner"
-      );
-
-      broadcastToWorkspace(workspaceId, {
-        type: "agent_state",
-        data: { status: "planning", currentNode: "Planner" },
-      }, clients);
-
-      // Get workspace files for context
+      // Get workspace context
       const files = await storage.getFilesByWorkspace(workspaceId);
-      const fileContext = files.map(f => `File: ${f.path}\n${f.content}`).join("\n\n");
+      const settings = await storage.getWorkspaceSettings(workspaceId);
+      
+      // Import and create orchestrator
+      const { AgentOrchestrator } = await import("./agents/orchestrator");
+      const orchestrator = new AgentOrchestrator(storage);
+      
+      // Set max attempts from settings
+      const maxAttempts = settings?.maxIterations ? parseInt(settings.maxIterations) : 3;
+      orchestrator.setMaxAttempts(maxAttempts);
 
-      // Call OpenAI
-      const stream = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
+      // Create agent context
+      const context = {
+        workspaceId,
+        prompt: userMessage,
+        existingFiles: files,
+        settings,
+        openai,
+      };
+
+      // Execute workflow with real-time updates
+      await orchestrator.executeWorkflow(context, (state) => {
+        // Update storage
+        storage.createOrUpdateAgentExecution(
+          workspaceId,
+          state.status,
+          state.currentStep,
           {
-            role: "system",
-            content: `You are an AI coding assistant helping with a project. Here are the current files:\n\n${fileContext}\n\nProvide helpful, concise responses about the code.`,
-          },
-          {
-            role: "user",
-            content: userMessage,
-          },
-        ],
-        stream: true,
-      });
+            progress: state.progress,
+            logs: state.logs,
+            filesGenerated: state.filesGenerated,
+            errors: state.errors,
+            attemptCount: state.attemptCount,
+          }
+        );
 
-      let fullResponse = "";
+        // Broadcast state updates
+        broadcastToWorkspace(workspaceId, {
+          type: "agent_state",
+          data: {
+            status: state.status,
+            currentStep: state.currentStep,
+            progress: state.progress,
+          },
+        }, clients);
 
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || "";
-        if (content) {
-          fullResponse += content;
-          
-          // Stream response to clients
+        // Stream logs to chat
+        if (state.logs.length > 0) {
+          const latestLog = state.logs[state.logs.length - 1];
           broadcastToWorkspace(workspaceId, {
             type: "chat_stream",
-            data: { content },
+            data: { content: latestLog + "\n" },
           }, clients);
         }
-      }
+      });
 
-      // Save agent response
+      // Save final agent response
+      const finalMessage = `Workflow completed successfully! Generated ${files.length} file(s).`;
       await storage.createChatMessage(
         workspaceId,
         "agent",
-        fullResponse
+        finalMessage
       );
-
-      // Update state to idle
-      await storage.createOrUpdateAgentExecution(
-        workspaceId,
-        "idle"
-      );
-
-      broadcastToWorkspace(workspaceId, {
-        type: "agent_state",
-        data: { status: "idle" },
-      }, clients);
 
       broadcastToWorkspace(workspaceId, {
         type: "chat_complete",
         data: {
           role: "agent",
-          content: fullResponse,
+          content: finalMessage,
           timestamp: new Date(),
         },
       }, clients);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error("Agent processing error:", error);
       
       await storage.createOrUpdateAgentExecution(
         workspaceId,
-        "error"
+        "error",
+        undefined,
+        { error: error.message }
       );
 
       broadcastToWorkspace(workspaceId, {
         type: "agent_error",
-        data: { message: "Failed to process request" },
+        data: { message: error.message || "Failed to process request" },
       }, clients);
     }
   }
