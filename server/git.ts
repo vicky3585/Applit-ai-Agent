@@ -26,13 +26,22 @@ export interface GitCommitInfo {
 
 /**
  * Basic input validation for Git commands
- * With argv-based execution, we only need to reject control characters
- * All other characters (parentheses, quotes, etc.) are safe
+ * With argv-based execution, we only need to reject truly invalid characters
+ * All other characters (parentheses, quotes, newlines, etc.) are safe
  */
-function validateGitInput(input: string): void {
-  // Reject control characters and null bytes (these are never valid in Git inputs)
-  if (/[\x00-\x1F\x7F]/.test(input)) {
-    throw new Error(`Invalid input: contains control characters`);
+function validateGitInput(input: string, allowNewlines: boolean = false): void {
+  // Only reject null bytes and other truly invalid control characters
+  // Allow newlines (0x0A) and carriage returns (0x0D) when specified
+  if (allowNewlines) {
+    // Reject null byte and other problematic control chars (not newlines)
+    if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(input)) {
+      throw new Error(`Invalid input: contains invalid control characters`);
+    }
+  } else {
+    // Reject all control characters including newlines
+    if (/[\x00-\x1F\x7F]/.test(input)) {
+      throw new Error(`Invalid input: contains control characters`);
+    }
   }
 }
 
@@ -165,10 +174,10 @@ export async function stageFiles(
     // Validate file paths (only reject control characters)
     files.forEach(f => validateGitInput(f));
     
-    // Build argv array - all file paths are safe, including those with spaces, quotes, etc.
+    // Build argv array with -- separator to handle filenames starting with hyphens
     const argv = files.length === 0
       ? ["git", "add", "."]
-      : ["git", "add", ...files];
+      : ["git", "add", "--", ...files];
       
     const result = await sandbox.executeCommandArgv(argv, workspaceId);
     
@@ -195,14 +204,14 @@ export async function commit(
   author?: { name: string; email: string }
 ): Promise<{ success: boolean; output: string; error?: string }> {
   try {
-    // Validate inputs (only reject control characters)
-    validateGitInput(message);
+    // Validate inputs - allow newlines in commit messages, only reject truly invalid chars
+    validateGitInput(message, true);
     if (author) {
-      validateGitInput(author.name);
-      validateGitInput(author.email);
+      validateGitInput(author.name, false);
+      validateGitInput(author.email, false);
     }
     
-    // Build argv array - ALL characters including quotes, parentheses, etc. are now safe!
+    // Build argv array - ALL characters including quotes, parentheses, newlines are safe!
     let argv: string[];
     if (author) {
       argv = [
@@ -311,10 +320,10 @@ export async function getCommitHistory(
     // Validate limit is a safe positive integer
     const safeLimit = Math.max(1, Math.min(100, Math.floor(limit)));
     
-    // Build argv array with validated limit
+    // Use null-byte separator which is never valid in commit messages
     const argv = [
       "git", "log",
-      "--pretty=format:%H|%an|%ai|%s",
+      "--pretty=format:%H%x00%an%x00%ai%x00%s",
       "-n", safeLimit.toString()
     ];
     
@@ -328,7 +337,7 @@ export async function getCommitHistory(
       .split("\n")
       .filter(Boolean)
       .map(line => {
-        const [hash, author, date, message] = line.split("|");
+        const [hash, author, date, message] = line.split("\x00");
         return { hash, author, date, message };
       });
   } catch (error) {
