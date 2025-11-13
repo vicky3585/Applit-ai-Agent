@@ -203,30 +203,49 @@ Instead of complete rewrite, we're implementing a **hybrid Node.js + Python syst
 ### Current Implementation Status
 
 **Completed** ✅:
-- Basic IDE UI with file explorer, code editor, chat, terminal
-- WebSocket real-time communication
-- OpenAI GPT-4 streaming chat
-- In-memory storage for workspaces and files
-- React component architecture with Shadcn/UI
+- **Phase 1** (Architecture & Planning - 2025-11-12):
+  - Comprehensive gap analysis comparing to original Python repository
+  - Hybrid Node.js + Python architecture design
+  - 7-phase implementation roadmap
+  - Technical decisions documented
+
+- **Phase 2** (Core IDE Infrastructure - COMPLETE 2025-11-13):
+  - **2A: Multi-stage Dockerfile & Environment Detection**:
+    - Dockerfile with build/development/production stages
+    - docker-compose.yml for all services
+    - Environment detection module (Replit vs Local)
+    - Hybrid storage factory (lazy loading for PostgreSQL)
+    - Security documentation (SECURITY.md)
+  
+  - **2B: Code-Server Integration & File Management**:
+    - Code-server proxy with WebSocket support
+    - Live preview proxy for running applications
+    - PostgreSQL storage with Drizzle ORM
+    - Per-workspace file sync to disk
+    - File tree operations API (create, rename, delete)
+    - Complete CRUD UI with dialogs, validation, error handling
+    - Tab synchronization across all open files
+    - Selection tracking resilient to renames/deletes
 
 **In Progress** ⏳:
-- Phase 2: Core IDE infrastructure implementation
+- Phase 3: AI Prompt-to-App Workflow
 
 **Recently Completed** ✅:
-- Phase 1: Architecture analysis and design (2025-11-12)
-  - Studied original repository  
-  - Created hybrid Node.js + Python architecture
-  - Comprehensive gap analysis
-  - 7-phase implementation roadmap
-- Phase 2 Infrastructure (Partial - 2025-11-12):
-  - Environment detection module (shared/environment.ts)
-  - Hybrid storage factory (works on Replit and local)
-  - Docker sandbox with mock fallback (server/sandbox.ts)
-  - Terminal execution API endpoints
-  - Package installation endpoints
+- Phase 2B.7 (File Tree Operations UI - 2025-11-13):
+  - FileExplorer component with per-item action menus
+  - Create/Rename/Delete dialogs with validation
+  - Client-side duplicate path detection
+  - Error handling with detailed messages
+  - Tab synchronization for all operations
+  - Test IDs for all interactive elements
 
 **Planned**:
-- All features from Phases 2-7 (see PHASE1_ANALYSIS.md for detailed breakdown)
+- Phases 3-7 (see PHASE1_ANALYSIS.md for detailed breakdown):
+  - Phase 3: Python LangGraph agent service (Planner/Coder/Tester)
+  - Phase 4: Developer tools (package manager, templates, GitHub)
+  - Phase 5: Multi-user & security
+  - Phase 6: GPU & offline mode (vLLM)
+  - Phase 7: Deployment & testing
 
 ### Success Metrics
 
