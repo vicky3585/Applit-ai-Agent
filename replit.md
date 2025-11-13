@@ -228,9 +228,31 @@ Instead of complete rewrite, we're implementing a **hybrid Node.js + Python syst
     - Selection tracking resilient to renames/deletes
 
 **In Progress** ⏳:
-- Phase 3: AI Prompt-to-App Workflow
+- Phase 4: Developer Tools (Tasks 4.1 & 4.2 Complete)
 
 **Recently Completed** ✅:
+- **Phase 4 Task 4.2** (Project Templates - 2025-11-13):
+  - Template system with 6 pre-built templates (React, Vue, Express, Flask, FastAPI, Next.js)
+  - Template configuration file (server/templates.ts) with complete file structures
+  - API routes: GET /api/templates, POST /api/workspaces/:id/apply-template
+  - TemplateSelectorModal with tabbed interface (All/Frontend/Backend/Fullstack)
+  - Template cards with icons, descriptions, categories
+  - Automatic package installation (npm/pip/apt)
+  - WebSocket progress broadcasting
+  - TopBar integration with Templates button (Sparkles icon)
+  - All test IDs present, tabs fixed with separate static TabsContent blocks
+
+- **Phase 4 Task 4.1** (Package Manager - 2025-11-13):
+  - Complete package manager UI for npm, pip, apt
+  - Schema extension with packages table (composite unique index)
+  - Storage methods: getPackages, upsertPackage, deletePackage
+  - API routes with Zod validation (installPackageRequestSchema)
+  - Version parsing for all package managers
+  - PackageManagerModal with tabbed interface (Install/Installed)
+  - Uninstall endpoint executes sandbox commands before DB deletion
+  - WebSocket progress updates during installation
+  - All test IDs present, architect reviewed
+
 - Phase 2B.7 (File Tree Operations UI - 2025-11-13):
   - FileExplorer component with per-item action menus
   - Create/Rename/Delete dialogs with validation
