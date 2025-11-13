@@ -7,6 +7,12 @@ This project is an AI-powered Web IDE that functions as a local Replit Core clon
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes (November 13, 2025)
+**Phase 7 Multiplayer Foundation (In Progress - Tasks 7.3-7.4 Complete):**
+- ✅ **Yjs Backend Provider** (`server/yjs-provider.ts`): Canonical y-websocket protocol implementation with sync + awareness, document updates broadcast to ALL connected clients, client ID tracking for proper cleanup, 30-second grace period before document destruction
+- ✅ **Monaco + Y-Monaco Integration** (`client/src/components/CodeEditor.tsx`): Replaced Textarea with Monaco editor bound to Yjs Y.Text, WebSocket connection to `/yjs` endpoint with query params, Y.Doc + provider caching (no recreation on tab switch), awareness cleared/restored on tab switching to prevent ghost cursors, full cleanup on tab close (destroy provider + Y.Doc)
+- ✅ **Tab-Switching Presence Lifecycle**: Awareness state cleared when leaving tab, restored when entering tab, prevents presence leaks and ghost cursors (architect-approved after 4 iterations)
+- **Next**: Tasks 7.5-7.14 pending (persistence, colored cursors, presence UI, follow mode, chat, permissions, e2e testing)
+
 **Phase 6 Professional Enhancement Complete:**
 - ✅ **Backend Resilience**: Exponential backoff retry logic for all OpenAI API calls (3 attempts, 2-30s backoff, smart error detection for rate limits/timeouts/network errors)
 - ✅ **Execution Timeouts**: Per-phase timeout management (Planning: 60s, Code: 120s, Test: 60s) with timeout error handling and user hints
@@ -38,11 +44,11 @@ Preferred communication style: Simple, everyday language.
 The frontend, built with React 18, TypeScript, and Vite, uses Shadcn/ui (Radix UI + Tailwind CSS) following a "new-york" style. It features Inter and JetBrains Mono fonts and a panel-based layout including a TopBar, FileExplorer, CodeEditor, RightPanel (Chat, Logs, Agent State, Git, Templates), TerminalPanel, and **PreviewPane** with split-screen support.
 
 ### Technical Implementations
-**Frontend:** Utilizes TanStack Query for data fetching and Wouter for lightweight routing. WebSocket clients ensure real-time communication. Features a **PreviewPane** component with iframe integration for live app previewing.
+**Frontend:** Utilizes TanStack Query for data fetching and Wouter for lightweight routing. WebSocket clients ensure real-time communication. Features a **PreviewPane** component with iframe integration for live app previewing. **Monaco Editor** with Y-Monaco bindings for collaborative editing (Phase 7).
 
 **Authentication System (Phase 5.1):** JWT-based authentication with refresh token rotation. Access tokens (15min) + refresh tokens (7 days) stored in httpOnly cookies. Session management with atomic cap enforcement (MAX_SESSIONS_PER_USER=5) using row-level locking in PostgresStorage. Progressive account lockout (3 fails=15min, 5 fails=1hr, 7+ fails=24hr). Both MemStorage (single-threaded) and PostgresStorage (row-level locks) enforce identical security contract.
 
-**Backend:** Powered by Express.js with TypeScript. A dedicated WebSocket server manages real-time features per workspace. An abstract storage layer, currently in-memory (`MemStorage`), is designed for future PostgreSQL integration via Drizzle ORM. RESTful APIs handle CRUD operations, while WebSockets manage real-time AI agent interactions.
+**Backend:** Powered by Express.js with TypeScript. A dedicated WebSocket server manages real-time features per workspace. An abstract storage layer, currently in-memory (`MemStorage`), is designed for future PostgreSQL integration via Drizzle ORM. RESTful APIs handle CRUD operations, while WebSockets manage real-time AI agent interactions. **Yjs Provider** on `/yjs` endpoint for collaborative editing with canonical y-websocket protocol (Phase 7).
 
 **AI Multi-Agent System (Phase 3-4 Complete):**
 - **Planner Agent:** Analyzes user requests and creates detailed execution plans
