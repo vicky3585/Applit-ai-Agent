@@ -18,6 +18,7 @@ export interface ExecutionResult {
 
 export interface ISandbox {
   executeCommand(command: string, workspaceId: string): Promise<ExecutionResult>;
+  executeCommandArgv(argv: string[], workspaceId: string): Promise<ExecutionResult>;
   executeFile(filePath: string, workspaceId: string): Promise<ExecutionResult>;
   installPackages(packages: string[], packageManager: "npm" | "pip" | "apt", workspaceId: string): Promise<ExecutionResult>;
 }
@@ -40,6 +41,44 @@ class DockerSandbox implements ISandbox {
       
       const exec = await container.exec({
         Cmd: ["/bin/bash", "-c", command],
+        AttachStdout: true,
+        AttachStderr: true,
+        WorkingDir: "/workspace",
+      });
+
+      const stream = await exec.start({ Detach: false });
+      
+      let output = "";
+      stream.on("data", (chunk: Buffer) => {
+        output += chunk.toString();
+      });
+
+      await new Promise((resolve) => stream.on("end", resolve));
+
+      const inspect = await exec.inspect();
+
+      return {
+        success: inspect.ExitCode === 0,
+        output: output.trim(),
+        exitCode: inspect.ExitCode ?? undefined,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        output: "",
+        error: error.message,
+        exitCode: 1,
+      };
+    }
+  }
+
+  async executeCommandArgv(argv: string[], workspaceId: string): Promise<ExecutionResult> {
+    try {
+      const container = this.docker.getContainer(this.containerName);
+      
+      // Execute command directly with argv array - NO SHELL PARSING
+      const exec = await container.exec({
+        Cmd: argv,
         AttachStdout: true,
         AttachStderr: true,
         WorkingDir: "/workspace",
@@ -125,6 +164,15 @@ class MockSandbox implements ISandbox {
     return {
       success: true,
       output: `[Mock Execution] Command logged: ${command}\n(Docker not available on Replit - deploy locally for real execution)`,
+      exitCode: 0,
+    };
+  }
+
+  async executeCommandArgv(argv: string[], workspaceId: string): Promise<ExecutionResult> {
+    console.log(`[MockSandbox] Would execute argv:`, argv);
+    return {
+      success: true,
+      output: `[Mock Execution] Command logged: ${argv.join(" ")}\n(Docker not available on Replit - deploy locally for real execution)`,
       exitCode: 0,
     };
   }
