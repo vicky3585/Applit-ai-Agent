@@ -316,6 +316,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(messages);
   });
 
+  app.get("/api/workspaces/:id/settings", async (req, res) => {
+    const settings = await storage.getWorkspaceSettings(req.params.id);
+    res.json(settings || {});
+  });
+
+  app.put("/api/workspaces/:id/settings", async (req, res) => {
+    const settings = await storage.upsertWorkspaceSettings(req.params.id, req.body);
+    res.json(settings);
+  });
+
+  app.get("/api/workspaces/:id/api-key-status", async (req, res) => {
+    res.json({ 
+      configured: !!process.env.OPENAI_API_KEY,
+      keyType: process.env.OPENAI_API_KEY?.startsWith('sk-') ? 'valid' : 'invalid'
+    });
+  });
+
   app.get("/api/workspaces/:id/agent", async (req, res) => {
     const execution = await storage.getAgentExecution(req.params.id);
     res.json(execution || { status: "idle" });

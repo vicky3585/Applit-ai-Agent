@@ -741,7 +741,7 @@ export default function IDE() {
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} workspaceId={WORKSPACE_ID} />
       <TemplateSelectorModal 
         open={templatesOpen} 
         onClose={() => setTemplatesOpen(false)}

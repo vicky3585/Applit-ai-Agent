@@ -69,6 +69,19 @@ export const codeExecutions = pgTable("code_executions", {
   completedAt: timestamp("completed_at"),
 });
 
+export const workspaceSettings = pgTable("workspace_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id").notNull().unique(),
+  modelProvider: text("model_provider").default("openai"), // 'openai' | 'anthropic' | 'local'
+  extendedThinking: text("extended_thinking").default("false"),
+  localFirst: text("local_first").default("false"),
+  autoFix: text("auto_fix").default("true"),
+  maxIterations: text("max_iterations").default("5"),
+  fontSize: text("font_size").default("14"),
+  autoSave: text("auto_save").default("true"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
@@ -114,6 +127,17 @@ export const insertCodeExecutionSchema = createInsertSchema(codeExecutions).pick
   status: true,
 });
 
+export const insertWorkspaceSettingsSchema = createInsertSchema(workspaceSettings).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const updateWorkspaceSettingsSchema = createInsertSchema(workspaceSettings).omit({
+  id: true,
+  workspaceId: true,
+  updatedAt: true,
+}).partial();
+
 export const installPackageRequestSchema = z.object({
   packages: z.array(z.string().min(1)).min(1),
   packageManager: z.enum(["npm", "pip", "apt"]),
@@ -122,7 +146,10 @@ export const installPackageRequestSchema = z.object({
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type InsertPackage = z.infer<typeof insertPackageSchema>;
 export type InstallPackageRequest = z.infer<typeof installPackageRequestSchema>;
+export type InsertWorkspaceSettings = z.infer<typeof insertWorkspaceSettingsSchema>;
+export type UpdateWorkspaceSettings = z.infer<typeof updateWorkspaceSettingsSchema>;
 export type User = typeof users.$inferSelect;
+export type WorkspaceSettings = typeof workspaceSettings.$inferSelect;
 export type Workspace = typeof workspaces.$inferSelect;
 export type File = typeof files.$inferSelect;
 export type ChatMessage = typeof chatMessages.$inferSelect;

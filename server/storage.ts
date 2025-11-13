@@ -8,6 +8,8 @@ import {
   type Package,
   type InsertPackage,
   type CodeExecution,
+  type WorkspaceSettings,
+  type UpdateWorkspaceSettings,
 } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { fileSync } from "./file-sync";
@@ -60,6 +62,10 @@ export interface IStorage {
   createCodeExecution(workspaceId: string, filePath: string, language?: string): Promise<CodeExecution>;
   updateCodeExecution(id: string, updates: Partial<Pick<CodeExecution, 'status' | 'output' | 'error' | 'exitCode' | 'completedAt'>>): Promise<CodeExecution | undefined>;
   appendCodeExecutionOutput(id: string, chunk: string): Promise<CodeExecution | undefined>;
+  
+  // Settings methods
+  getWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings | undefined>;
+  upsertWorkspaceSettings(workspaceId: string, settings: UpdateWorkspaceSettings): Promise<WorkspaceSettings>;
 }
 
 export class MemStorage implements IStorage {
@@ -70,6 +76,7 @@ export class MemStorage implements IStorage {
   private agentExecutions: Map<string, AgentExecution>;
   private packages: Map<string, Package>;
   private codeExecutions: Map<string, CodeExecution>;
+  private workspaceSettings: Map<string, WorkspaceSettings>;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
 
@@ -81,6 +88,7 @@ export class MemStorage implements IStorage {
     this.agentExecutions = new Map();
     this.packages = new Map();
     this.codeExecutions = new Map();
+    this.workspaceSettings = new Map();
   }
 
   /**
@@ -450,6 +458,41 @@ export class MemStorage implements IStorage {
 
     this.codeExecutions.set(id, updated);
     return updated;
+  }
+
+  async getWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings | undefined> {
+    return Array.from(this.workspaceSettings.values())
+      .find((s) => s.workspaceId === workspaceId);
+  }
+
+  async upsertWorkspaceSettings(workspaceId: string, settings: UpdateWorkspaceSettings): Promise<WorkspaceSettings> {
+    const existing = await this.getWorkspaceSettings(workspaceId);
+    
+    if (existing) {
+      const updated: WorkspaceSettings = {
+        ...existing,
+        ...settings,
+        updatedAt: new Date(),
+      };
+      this.workspaceSettings.set(existing.id, updated);
+      return updated;
+    } else {
+      const id = randomUUID();
+      const newSettings: WorkspaceSettings = {
+        id,
+        workspaceId,
+        modelProvider: settings.modelProvider || 'openai',
+        extendedThinking: settings.extendedThinking || 'false',
+        localFirst: settings.localFirst || 'false',
+        autoFix: settings.autoFix || 'true',
+        maxIterations: settings.maxIterations || '5',
+        fontSize: settings.fontSize || '14',
+        autoSave: settings.autoSave || 'true',
+        updatedAt: new Date(),
+      };
+      this.workspaceSettings.set(id, newSettings);
+      return newSettings;
+    }
   }
 }
 
