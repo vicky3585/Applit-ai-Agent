@@ -17,6 +17,7 @@ Preferred communication style: Simple, everyday language.
 - ✅ Fixed shared state bug in orchestrator (per-workflow max attempts)
 - ✅ Environment-aware configuration (works in both Replit and local Ubuntu)
 - ✅ Package Installation UI - Real-time progress tracking for npm/pip/apt installations with streaming logs, status badges, and error reporting (centralized WebSocket integration)
+- ✅ Code Execution System - Enhanced mock sandbox with deterministic output (parses console.log/print from file content), real-time streaming, execution history, comprehensive debug logging
 
 ## System Architecture
 
@@ -60,6 +61,7 @@ The frontend, built with React 18, TypeScript, and Vite, uses Shadcn/ui (Radix U
 **Developer Tools:**
 - **Package Manager:** UI component supporting npm, pip, and apt with real-time installation and progress indicators
 - **Package Installation Tracker:** Real-time UI panel showing live package installation progress, streaming logs from npm/pip/apt commands, visual status indicators (Installing/Completed/Failed), installation history with duration tracking, and error messaging for debugging. Uses centralized WebSocket system for live updates.
+- **Code Execution System:** Full-featured code execution with Docker sandbox (local) and enhanced mock sandbox (Replit). Features include: real-time output streaming via WebSocket, execution history tracking, multi-language support (11 languages), throttled output broadcasting (100ms intervals), status badges (Running/Success/Failed), exit code tracking, and deterministic mock output (parses console.log/print statements from file content). Production-ready with Docker; graceful fallback in Replit with simulated execution.
 - **Project Templates:** A system with 6 pre-built templates (React, Vue, Express, Flask, FastAPI, Next.js) and a selection modal
 - **GitHub & Git Integration:** Implemented with argv-based execution for maximum security, eliminating shell injection risks. Supports 10 Git operations and GitHub API integration with a dedicated UI panel for status, staging, committing, pushing/pulling, and history
 - **Live Preview Pane:** Iframe-based preview system with WebSocket hot reload integration, custom URL support (with proper input handling), open-in-new-tab functionality, split-screen layout support
@@ -75,11 +77,11 @@ The system is designed for a hybrid Node.js + Python architecture. Data storage 
 - Need process isolation for user-generated code execution
 
 **Features to Add:**
-- Package installation progress UI
 - WebContainer integration for browser-based Node.js execution
 - One-click deployment system
 - Streaming enhancements for agent workflow
 - Retry backoff for API calls
+- Execution timeout/cleanup for stuck executions (Replit environment)
 
 **Security Hardening Complete:**
 - ✅ Path traversal prevention (absolute/UNC/drive paths rejected)
