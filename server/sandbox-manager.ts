@@ -12,6 +12,8 @@ import Docker from "dockerode";
 import path from "path";
 import fs from "fs";
 import { ExecutionResult } from "./sandbox";
+import { FileWatcher } from "./file-watcher";
+import type { IStorage } from "./storage";
 
 export interface SandboxConfig {
   workspaceId: string;
@@ -42,11 +44,13 @@ const RUNTIME_IMAGES = {
 export class SandboxManager {
   private docker: Docker;
   private containers: Map<string, ContainerInfo> = new Map();
+  private fileWatchers: Map<string, FileWatcher> = new Map();
   private workspaceRoot: string;
   private cleanupInterval: NodeJS.Timeout | null = null;
   private readonly CONTAINER_TTL_MS = 30 * 60 * 1000; // 30 minutes of inactivity
   private readonly CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // Check every 5 minutes
   private creationLocks: Map<string, Promise<Docker.Container>> = new Map();
+  private storage: IStorage | null = null;
 
   constructor(workspaceRoot: string = "/tmp/workspaces") {
     this.docker = new Docker();
@@ -54,6 +58,13 @@ export class SandboxManager {
     this.ensureWorkspaceRoot();
     this.reconcileState();
     this.startCleanupTask();
+  }
+
+  /**
+   * Set storage for bidirectional file sync
+   */
+  setStorage(storage: IStorage): void {
+    this.storage = storage;
   }
 
   private ensureWorkspaceRoot() {
@@ -143,6 +154,9 @@ export class SandboxManager {
       this.containers.set(workspaceId, info);
       console.log(`[SandboxManager] Container created and started: ${container.id.substring(0, 12)}`);
 
+      // Start file watcher for bidirectional sync
+      await this.startFileWatcher(workspaceId);
+
       return container.id;
     } catch (error: any) {
       console.error(`[SandboxManager] Failed to create container:`, error);
@@ -200,6 +214,12 @@ export class SandboxManager {
             info.status = "running";
             info.lastActivityAt = new Date();
           }
+          
+          // Start file watcher when container resumes
+          await this.startFileWatcher(workspaceId);
+        } else if (!this.fileWatchers.has(workspaceId)) {
+          // Start file watcher if container is running but not being watched
+          await this.startFileWatcher(workspaceId);
         }
 
         resolveLock!(container);
@@ -295,6 +315,9 @@ export class SandboxManager {
   async stopContainer(workspaceId: string): Promise<void> {
     const containerName = this.getContainerName(workspaceId);
     
+    // Stop file watcher first
+    await this.stopFileWatcher(workspaceId);
+    
     try {
       const container = this.docker.getContainer(containerName);
       await container.stop({ t: 10 });
@@ -317,6 +340,9 @@ export class SandboxManager {
    */
   async removeContainer(workspaceId: string): Promise<void> {
     const containerName = this.getContainerName(workspaceId);
+    
+    // Stop file watcher first
+    await this.stopFileWatcher(workspaceId);
     
     try {
       const container = this.docker.getContainer(containerName);
@@ -549,12 +575,68 @@ export class SandboxManager {
   }
 
   /**
+   * Start file watcher for bidirectional sync
+   */
+  private async startFileWatcher(workspaceId: string): Promise<void> {
+    if (!this.storage) {
+      console.log(`[SandboxManager] Skipping file watcher - no storage configured`);
+      return;
+    }
+
+    if (this.fileWatchers.has(workspaceId)) {
+      console.log(`[SandboxManager] File watcher already active for: ${workspaceId}`);
+      return;
+    }
+
+    try {
+      const watcher = new FileWatcher({
+        workspaceId,
+        storage: this.storage,
+        workspaceRoot: this.workspaceRoot,
+      });
+
+      await watcher.start();
+      this.fileWatchers.set(workspaceId, watcher);
+      console.log(`[SandboxManager] Started file watcher for: ${workspaceId}`);
+    } catch (error: any) {
+      console.error(`[SandboxManager] Failed to start file watcher:`, error.message);
+    }
+  }
+
+  /**
+   * Stop file watcher for workspace
+   */
+  private async stopFileWatcher(workspaceId: string): Promise<void> {
+    const watcher = this.fileWatchers.get(workspaceId);
+    
+    if (watcher) {
+      await watcher.stop();
+      this.fileWatchers.delete(workspaceId);
+      console.log(`[SandboxManager] Stopped file watcher for: ${workspaceId}`);
+    }
+  }
+
+  /**
+   * Get file watcher for workspace (for marking internal changes)
+   */
+  getFileWatcher(workspaceId: string): FileWatcher | undefined {
+    return this.fileWatchers.get(workspaceId);
+  }
+
+  /**
    * Cleanup all containers (for shutdown)
    */
   async cleanupAll(): Promise<void> {
     console.log(`[SandboxManager] Cleaning up all containers...`);
     this.stopCleanupTask();
     
+    // Stop all file watchers first
+    const watcherPromises = Array.from(this.fileWatchers.keys()).map(id => 
+      this.stopFileWatcher(id)
+    );
+    await Promise.all(watcherPromises);
+    
+    // Then remove all containers
     const workspaceIds = Array.from(this.containers.keys());
     await Promise.all(
       workspaceIds.map(id => this.removeContainer(id))

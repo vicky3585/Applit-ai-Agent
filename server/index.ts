@@ -3,6 +3,8 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { storagePromise } from "./storage-factory";
 import { shutdownSandbox, sandbox } from "./sandbox";
+import { fileSync } from "./file-sync";
+import { getSandboxManager } from "./sandbox-manager";
 
 const app = express();
 
@@ -57,6 +59,19 @@ app.use((req, res, next) => {
   // Inject storage into sandbox for multi-language execution
   sandbox.setStorage(storage);
   log("Sandbox configured with storage");
+
+  // Set up bidirectional file sync callback
+  const sandboxManager = getSandboxManager();
+  sandboxManager.setStorage(storage);
+  
+  // Configure FileSync to mark changes as internal to prevent circular updates
+  fileSync.setInternalChangeCallback((workspaceId, filePath) => {
+    const watcher = sandboxManager.getFileWatcher(workspaceId);
+    if (watcher) {
+      watcher.markInternalChange(filePath);
+    }
+  });
+  log("Bidirectional file sync configured");
 
   const server = await registerRoutes(app);
 

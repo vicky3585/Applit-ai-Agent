@@ -1,195 +1,34 @@
 # AI Web IDE - Replit Core Clone
 
 ## Overview
-
-This project is transforming from a simple AI Web IDE into a complete local Replit Core clone running on Ubuntu 24.04 with NVIDIA RTX 3060 GPU support. The system enables full prompt-to-app workflows where users type natural language requests and the system automatically plans, codes, tests, and deploys complete applications with live preview.
+This project is an AI-powered Web IDE that functions as a local Replit Core clone, designed to run on Ubuntu 24.04 with NVIDIA RTX 3060 GPU support. Its primary purpose is to enable full prompt-to-app workflows, allowing users to describe desired applications in natural language. The system then automatically plans, codes, tests, and deploys these applications, providing a live preview. The project aims to integrate robust development tools, AI agents for code generation and correction, and a scalable architecture for a comprehensive development environment.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Frontend
+### UI/UX Decisions
+The frontend, built with React 18, TypeScript, and Vite, uses Shadcn/ui (Radix UI + Tailwind CSS) following a "new-york" style. It features Inter and JetBrains Mono fonts and a panel-based layout including a TopBar, FileExplorer, CodeEditor, RightPanel (Chat, Logs, Agent State, Git, Templates), and TerminalPanel.
 
-The frontend is built with React 18, TypeScript, Vite, and TanStack Query. It uses Shadcn/ui (based on Radix UI and Tailwind CSS) for its UI, following a "new-york" style with Inter and JetBrains Mono fonts. The layout is panel-based, featuring a TopBar, FileExplorer, CodeEditor, RightPanel (Chat, Logs, Agent State, Git, Templates), and TerminalPanel. Wouter handles lightweight routing, and WebSocket clients manage real-time communication for live updates.
+### Technical Implementations
+**Frontend:** Utilizes TanStack Query for data fetching and Wouter for lightweight routing. WebSocket clients ensure real-time communication.
+**Backend:** Powered by Express.js with TypeScript. A dedicated WebSocket server manages real-time features per workspace. An abstract storage layer, currently in-memory (`MemStorage`), is designed for future PostgreSQL integration via Drizzle ORM. RESTful APIs handle CRUD operations, while WebSockets manage real-time AI agent interactions.
+**AI Agent System:** Integrates with OpenAI API for GPT-powered coding. AI agents follow `idle`, `planning`, `coding`, `testing`, and `fixing` states. Communication is streamed from user chat to the server, then to OpenAI, and back to the client. Agent execution state is persisted per workspace.
+**Core IDE Features:** Includes a production-ready Docker sandbox infrastructure for isolated code execution with concurrency control, supporting multi-language execution (11 languages including JavaScript, Python, Go, Rust, C/C++, Java, Ruby, PHP, Shell) via a polyglot Docker image. It features intelligent language detection, various execution modes (interpreter, compile-run, script), and build caching for compiled languages.
+**Developer Tools:**
+- **Package Manager:** UI component supporting npm, pip, and apt with real-time installation and progress indicators.
+- **Project Templates:** A system with 6 pre-built templates (React, Vue, Express, Flask, FastAPI, Next.js) and a selection modal.
+- **GitHub & Git Integration:** Implemented with argv-based execution for maximum security, eliminating shell injection risks. Supports 10 Git operations and GitHub API integration with a dedicated UI panel for status, staging, committing, pushing/pulling, and history.
 
-### Backend
-
-The backend utilizes Express.js with TypeScript. A dedicated WebSocket server (using `ws`) handles real-time features, organizing connections by workspace ID. An abstract storage layer (currently in-memory with `MemStorage`) is designed for future PostgreSQL integration via Drizzle ORM, managing users, workspaces, files, chat messages, and agent executions. RESTful APIs provide CRUD operations, while WebSockets manage real-time agent interactions.
-
-### Data Storage
-
-Drizzle ORM is configured for PostgreSQL, with a schema defining `users`, `workspaces`, `files`, `chatMessages`, and `agentExecutions`. While currently using in-memory storage for prototyping, production will use PostgreSQL 16 with `pgvector` for vector embeddings.
-
-### AI Agent System
-
-The system integrates with the OpenAI API for GPT-powered coding assistance. AI agents follow a workflow including `idle`, `planning`, `coding`, `testing`, and `fixing` states. Communication flows from user chat messages (via WebSocket) to the server, then to OpenAI, with streaming responses back to the client for real-time UI updates. Agent execution state is persisted per workspace for recovery and synchronization.
-
-## Transformation Roadmap: Replit Core Clone
-
-### Seven-Phase Implementation Plan
-
-**Phase 1: Study & Architecture** ✅
-- Analyzed original repository (https://github.com/vicky3585/ai-ide-agent)
-- Designed hybrid Node.js + Python architecture
-- Created module upgrade plan
-- Gap analysis completed
-
-**Phase 2: Core IDE Features** (In Progress)
-- Task 2.1: Docker Sandbox Infrastructure ✅ (PRODUCTION-READY - Architect Approved)
-- Task 2.2: Code Execution with File Mounting (Planned)
-- Task 2.3: Terminal WebSocket with Streaming Output (Planned)
-- Task 2.4: Live Preview Proxy Server (Planned)
-- Task 2.5: PostgreSQL Storage Migration (Planned)
-
-**Phase 3: AI Prompt-to-App Workflow** (Planned)
-- Create Python LangGraph agent service
-- Implement Planner agent (task decomposition)
-- Implement Coder agent (file generation)
-- Implement Tester agent (validation)
-- Build auto-fix loop with 3-attempt retry
-
-**Phase 4: Developer Tools** ✅ (All Tasks Complete)
-- Task 4.1: Package Manager UI ✅
-- Task 4.2: Project Templates ✅
-- Task 4.3: GitHub OAuth & Git Integration ✅
-
-**Phase 5: Multi-user & Security** (Planned)
-- JWT authentication system
-- Multi-project dashboard
-- Sandbox lifecycle management
-- Resource limits and security controls
-
-**Phase 6: GPU & Offline Mode** (Planned)
-- vLLM integration for RTX 3060
-- LOCAL_FIRST routing (GPU → OpenAI fallback)
-- Offline mode with cached responses
-- Cost optimization with result reuse
-
-**Phase 7: Deployment & Testing** (Planned)
-- Docker Compose for all services
-- Ubuntu 24.04 package (.deb installer)
-- Comprehensive E2E tests
-- Complete documentation
-
-## Recent Development Progress
-
-**Phase 2 Task 2.1 - Docker Sandbox Infrastructure** ✅ (PRODUCTION-READY 2025-11-13):
-
-Architect-approved production container lifecycle management system with complete concurrency control and error recovery.
-
-**Architecture**:
-- **SandboxManager**: Centralized Docker container lifecycle management with mutex-based locking
-- **Container-per-workspace**: Each workspace gets isolated Docker container with dedicated volumes
-- **Multi-runtime support**: Node.js, Python, Fullstack base images with auto-pull
-- **Resource limits**: Configurable CPU/memory constraints (default: 512MB, 1 CPU)
-- **File mounting**: Workspace files mounted as volumes at /workspace for bidirectional sync
-
-**Production Features**:
-- **Activity tracking**: `lastActivityAt` timestamp updated on every execution
-- **TTL-based cleanup**: Automatic removal of idle containers after 30 minutes (5-minute polling)
-- **Race condition prevention**: Creation locks serialize concurrent container access
-- **Deadlock prevention**: Promise-based locks with reject handlers ensure waiters never hang
-- **State reconciliation**: Discovers and tracks existing containers on startup
-- **Graceful shutdown**: SIGTERM/SIGINT handlers cleanup all containers before exit
-- **Metrics logging**: CPU/memory usage, execution time, exit code tracking
-- **Auto-recovery**: Failed operations reject locks, allowing automatic retry
-
-**Critical Bug Fixes**:
-- ✅ Fixed race conditions with promise-based creation locks
-- ✅ Added reject handlers to prevent indefinite hangs on Docker errors
-- ✅ Switched from createdAt to lastActivityAt for accurate TTL tracking
-- ✅ Implemented proper state reconciliation for crash recovery
-- ✅ Added activity timestamp updates on all container operations
-
-**Implementation Files**:
-- `server/sandbox-manager.ts`: Core lifecycle manager (531 lines)
-- `server/sandbox.ts`: ISandbox implementation with SandboxManager integration
-- `server/index.ts`: Graceful shutdown handlers for production deployment
-
-**Verified Behaviors**:
-- ✅ Only one caller creates/starts containers per workspace
-- ✅ Concurrent callers wait on shared lock promise
-- ✅ Transient Docker errors trigger automatic retry
-- ✅ Idle containers cleaned up based on actual activity
-- ✅ Clean shutdown removes all running containers
-
-**Future Enhancements** (Optional):
-- Workspace runtime persistence in database
-- Automated concurrency stress tests
-- Enhanced operational logging/metrics
-- File sync optimizations for large workspaces
-
-## Previous Development Progress
-
-**Phase 4 Task 4.1 - Package Manager** (Completed 2025-11-13):
-- Built PackageManagerPanel UI component with npm/pip/apt support
-- Integrated InstallPackageDialog with autocomplete suggestions
-- Added API routes for package installation and listing
-- Extended ISandbox interface to support "apt" package manager
-- Real-time package installation with progress indicators
-
-**Phase 4 Task 4.2 - Project Templates** (Completed 2025-11-13):
-- Created template system with 6 pre-built templates (React, Vue, Express, Flask, FastAPI, Next.js)
-- Template configuration file (server/templates.ts) with complete file structures
-- API routes: GET /api/templates, POST /api/workspaces/:id/apply-template
-- TemplateSelectorModal with tabbed interface (All/Frontend/Backend/Fullstack)
-- Integrated template selector into TopBar for easy access
-- Template application clears existing workspace files before applying
-- Toast notifications for user feedback on template application
-
-**Phase 4 Task 4.3 - GitHub OAuth & Git Integration** (Completed 2025-11-13):
-
-✅ **PRODUCTION-READY STATUS**: Complete argv-based implementation with maximum security and full Git functionality.
-
-**Security Architecture**:
-- **Argv-Based Execution**: All Git commands use argv arrays passed directly to Docker, eliminating shell parsing entirely
-- **Zero Injection Risk**: No shell metacharacter parsing means parentheses, quotes, dollar signs, and all legitimate characters are inherently safe
-- **Minimal Validation**: Only rejects truly invalid control characters (null bytes, etc.). Newlines are allowed in commit messages for multi-line support
-- **No Escaping Required**: Command arguments are never interpreted by a shell, eliminating entire classes of vulnerabilities
-
-**Implementation Details**:
-- Extended ISandbox interface with `executeCommandArgv(argv: string[], workspaceId: string)` method
-- DockerSandbox passes argv array directly to Docker's `Cmd` parameter without `/bin/bash -c`
-- All 10 Git operations refactored: clone, status, stage, commit, push, pull, history, init, setRemote, log
-- Supports ALL legitimate Git inputs:
-  - Commit messages with parentheses, quotes, special chars: `feat(scope): add "feature"`
-  - Multi-line commit messages with newlines
-  - File names with spaces, quotes, hyphens at start: `-my-file.txt`, `"quoted file.txt"`
-  - Branch names, remote names, URLs with any valid characters
-  - Author names and emails with international characters
-- Robust parsing:
-  - Null-byte delimiters in commit history prevent issues with pipe characters in messages
-  - `--` separator in file staging protects hyphen-prefixed filenames
-
-**Integrated Features**:
-- Git backend module (server/git.ts) with 10 argv-based operations
-- GitHub API integration (server/github.ts) via Octokit REST API with automatic token refresh
-- 10 Git API routes fully exposed in server/routes.ts
-- 3 GitHub API routes: user info, repository listing, repository details
-- GitPanel UI component with:
-  - Real-time Git status display (polling every 5 seconds)
-  - File staging with checkbox selection
-  - Commit workflow with message input (supports ALL characters)
-  - Push/pull operations with branch support
-  - Commit history display (last 10 commits)
-- GitHubBrowserModal for browsing user repositories with one-click cloning
-- Integrated as "Git" tab in IDE right panel
-- GitHub button in TopBar for easy repository access
-- URL format validation for clone/setRemote operations
-- Numeric parameter safety (commit history limit clamping)
-
-**Future Enhancements (Optional)**:
-- Workspace isolation checks before cloning into non-empty directories
-- Progress indicators for long-running Git operations
-- Merge conflict resolution UI
+### System Design Choices
+The system is designed for a hybrid Node.js + Python architecture. Data storage will transition from in-memory to PostgreSQL 16 with `pgvector` for vector embeddings, managed by Drizzle ORM. The Docker sandbox provides container-per-workspace isolation with resource limits, activity tracking, and TTL-based cleanup. Security is a priority, especially in Git integration, using argv-based execution to prevent injection vulnerabilities. Future plans include multi-user support with JWT authentication, sandbox lifecycle management, and GPU integration with vLLM for local inference.
 
 ## External Dependencies
 
-**AI Services**: OpenAI API (requires `OPENAI_API_KEY`)
-**Database**: PostgreSQL (via Neon serverless driver, requires `DATABASE_URL`)
-**UI Libraries**: Radix UI, Tailwind CSS, Lucide React
-**Build & Runtime**: Vite, esbuild, tsx, Drizzle Kit
-**Session Management**: connect-pg-simple
-**New Services (Planned)**: Python Agent Service (LangGraph), vLLM Service (local GPU inference), code-server, Redis
+*   **AI Services**: OpenAI API (`OPENAI_API_KEY`)
+*   **Database**: PostgreSQL (via Neon serverless driver, `DATABASE_URL`)
+*   **UI Libraries**: Radix UI, Tailwind CSS, Lucide React
+*   **Build & Runtime**: Vite, esbuild, tsx, Drizzle Kit
+*   **Session Management**: connect-pg-simple
+*   **Planned Services**: Python Agent Service (LangGraph), vLLM Service (local GPU inference), code-server, Redis

@@ -10,11 +10,21 @@ import path from "path";
 import type { File } from "@shared/schema";
 import { ENV_CONFIG } from "@shared/environment";
 
+type InternalChangeCallback = (workspaceId: string, filePath: string) => void;
+
 export class FileSync {
   private workspaceRoot: string;
+  private internalChangeCallback: InternalChangeCallback | null = null;
 
-  constructor(workspaceRoot: string = "/workspace") {
+  constructor(workspaceRoot: string = "/tmp/workspaces") {
     this.workspaceRoot = workspaceRoot;
+  }
+
+  /**
+   * Set callback to mark internal changes (prevents circular sync with FileWatcher)
+   */
+  setInternalChangeCallback(callback: InternalChangeCallback | null): void {
+    this.internalChangeCallback = callback;
   }
 
   /**
@@ -35,6 +45,11 @@ export class FileSync {
     }
 
     try {
+      // Mark as internal change before writing to prevent FileWatcher from syncing back
+      if (this.internalChangeCallback) {
+        this.internalChangeCallback(file.workspaceId, file.path);
+      }
+
       // Files go in /workspace/{workspaceId}/{filePath}
       const workspacePath = this.getWorkspacePath(file.workspaceId);
       const fullPath = path.join(workspacePath, file.path);
@@ -83,6 +98,11 @@ export class FileSync {
     }
 
     try {
+      // Mark as internal change before deleting to prevent FileWatcher from syncing back
+      if (this.internalChangeCallback) {
+        this.internalChangeCallback(workspaceId, filePath);
+      }
+
       const workspacePath = this.getWorkspacePath(workspaceId);
       const fullPath = path.join(workspacePath, filePath);
       await fs.unlink(fullPath);
