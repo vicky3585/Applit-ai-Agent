@@ -73,6 +73,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Process with AI agent
           await processAgentRequest(data.workspaceId, data.content, workspaceConnections);
         }
+
+        if (data.type === "terminal_command" && typeof data.workspaceId === "string" && typeof data.command === "string") {
+          const workspaceConnections = connections.get(data.workspaceId);
+          
+          try {
+            // Execute command and stream output
+            const result = await sandbox.executeCommand(data.command, data.workspaceId);
+            
+            // Broadcast output
+            broadcastToWorkspace(data.workspaceId, {
+              type: "terminal_output",
+              data: { chunk: result.output },
+            }, workspaceConnections);
+            
+            // Broadcast completion
+            broadcastToWorkspace(data.workspaceId, {
+              type: "terminal_complete",
+              data: { 
+                success: result.success, 
+                exitCode: result.exitCode,
+                error: result.error 
+              },
+            }, workspaceConnections);
+          } catch (error: any) {
+            broadcastToWorkspace(data.workspaceId, {
+              type: "terminal_error",
+              data: { message: error.message || "Command execution failed" },
+            }, workspaceConnections);
+          }
+        }
       } catch (error) {
         console.error("WebSocket error:", error);
       }
