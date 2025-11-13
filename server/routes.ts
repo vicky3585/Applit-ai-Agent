@@ -370,6 +370,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ url: baseUrl });
   });
 
+  app.post("/api/workspaces/:id/start-server", async (req, res) => {
+    try {
+      const { getDevServerManager } = await import("./dev-server-manager");
+      const { getFilePersistence } = await import("./file-persistence");
+      
+      const manager = getDevServerManager();
+      const persistence = getFilePersistence();
+      const workspaceId = req.params.id;
+      
+      // Only works if file persistence is enabled
+      if (!persistence) {
+        return res.status(400).json({ error: "File persistence not enabled" });
+      }
+
+      const workspacePath = `/tmp/ide-workspaces/${workspaceId}`;
+      const server = await manager.startServer(workspaceId, workspacePath);
+      
+      if (!server) {
+        return res.status(400).json({ error: "Could not start server" });
+      }
+
+      res.json({
+        url: server.url,
+        port: server.port,
+        type: server.type,
+      });
+    } catch (error: any) {
+      console.error("[API] Error starting server:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/workspaces/:id/stop-server", async (req, res) => {
+    try {
+      const { getDevServerManager } = await import("./dev-server-manager");
+      const manager = getDevServerManager();
+      
+      await manager.stopServer(req.params.id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("[API] Error stopping server:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/workspaces/:id/agent", async (req, res) => {
     const execution = await storage.getAgentExecution(req.params.id);
     res.json(execution || { status: "idle" });
