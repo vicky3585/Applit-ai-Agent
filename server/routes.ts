@@ -67,22 +67,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return;
         }
 
+        // Type guard: workspaceId is guaranteed non-null after this point
+        const authenticatedWorkspaceId: string = workspaceId;
+
         if (data.type === "chat_message") {
           // Security: Verify workspace ID matches authenticated session
-          if (data.workspaceId !== workspaceId) {
-            console.warn(`[WebSocket] Workspace mismatch: attempted ${data.workspaceId}, authenticated as ${workspaceId}`);
+          if (data.workspaceId !== authenticatedWorkspaceId) {
+            console.warn(`[WebSocket] Workspace mismatch: attempted ${data.workspaceId}, authenticated as ${authenticatedWorkspaceId}`);
             return;
           }
 
           // Save user message
           await storage.createChatMessage(
-            workspaceId,
+            authenticatedWorkspaceId,
             "user",
             data.content
           );
 
           // Broadcast to all clients in workspace
-          const workspaceConnections = connections.get(workspaceId);
+          const workspaceConnections = connections.get(authenticatedWorkspaceId);
           workspaceConnections?.forEach((client) => {
             if (client.readyState === 1) {
               client.send(JSON.stringify({
@@ -97,26 +100,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
 
           // Process with AI agent
-          await processAgentRequest(workspaceId, data.content, workspaceConnections);
+          await processAgentRequest(authenticatedWorkspaceId, data.content, workspaceConnections);
         }
 
         if (data.type === "terminal_command" && typeof data.command === "string") {
           // Security: Verify workspace ID matches authenticated session
-          if (data.workspaceId && data.workspaceId !== workspaceId) {
-            console.warn(`[WebSocket] Workspace mismatch: attempted ${data.workspaceId}, authenticated as ${workspaceId}`);
+          if (data.workspaceId && data.workspaceId !== authenticatedWorkspaceId) {
+            console.warn(`[WebSocket] Workspace mismatch: attempted ${data.workspaceId}, authenticated as ${authenticatedWorkspaceId}`);
             return;
           }
 
-          const workspaceConnections = connections.get(workspaceId);
+          const workspaceConnections = connections.get(authenticatedWorkspaceId);
           
           try {
             // Execute command with streaming output
             const result = await sandbox.executeCommandWithOptions({
-              workspaceId,
+              workspaceId: authenticatedWorkspaceId,
               command: data.command,
               onOutput: (chunk: string) => {
                 // Broadcast each output chunk in real-time
-                broadcastToWorkspace(workspaceId, {
+                broadcastToWorkspace(authenticatedWorkspaceId, {
                   type: "terminal_output",
                   data: { chunk },
                 }, workspaceConnections);
@@ -124,7 +127,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
             
             // Broadcast completion
-            broadcastToWorkspace(workspaceId, {
+            broadcastToWorkspace(authenticatedWorkspaceId, {
               type: "terminal_complete",
               data: { 
                 success: result.success, 
@@ -133,7 +136,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               },
             }, workspaceConnections);
           } catch (error: any) {
-            broadcastToWorkspace(workspaceId, {
+            broadcastToWorkspace(authenticatedWorkspaceId, {
               type: "terminal_error",
               data: { message: error.message || "Command execution failed" },
             }, workspaceConnections);
