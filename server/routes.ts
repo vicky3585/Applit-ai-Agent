@@ -395,7 +395,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/workspaces/:id/preview-url", async (req, res) => {
     // Return the preview URL for the workspace
     // In Replit, this is typically the main app URL
-    const baseUrl = `${req.protocol}://${req.get('host')}`;
+    // Force HTTPS when X-Forwarded-Proto is https or when host contains replit.dev
+    const host = req.get('host') || '';
+    const forwardedProto = req.get('x-forwarded-proto');
+    const isSecure = forwardedProto === 'https' || host.includes('replit.dev') || req.secure;
+    const protocol = isSecure ? 'https' : req.protocol;
+    const baseUrl = `${protocol}://${host}`;
     res.json({ url: baseUrl });
   });
 
