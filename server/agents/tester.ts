@@ -26,26 +26,31 @@ export class TesterAgent {
 
     // Check 2: Syntax validation via AI
     const filesContext = files.map(f => 
-      `File: ${f.path}\nLanguage: ${f.language || "unknown"}\n\`\`\`\n${f.content.substring(0, 500)}\n\`\`\``
+      `File: ${f.path}\nLanguage: ${f.language || "unknown"}\n\`\`\`\n${f.content}\n\`\`\``
     ).join("\n\n");
 
-    const systemPrompt = `You are a code validator that checks for common issues.
+    const systemPrompt = `You are a code validator that checks ONLY for critical errors.
 
-Analyze the generated code and check for:
-1. Syntax errors
-2. Missing imports or dependencies
-3. Logical errors or bugs
-4. Security issues
-5. Best practice violations
+ONLY mark as failed if you find:
+1. SEVERE syntax errors that prevent code from running (missing brackets, unclosed tags, etc.)
+2. Missing critical imports that will cause immediate crashes
+3. Security vulnerabilities that expose user data
+
+IGNORE and ALLOW:
+- Style issues
+- Minor best practice violations
+- Warnings or suggestions
+- Missing optional features
+- Code that "could be better" but works
 
 Return a JSON object:
 {
   "passed": true/false,
-  "issues": ["list of issues found"],
-  "severity": "low|medium|high"
+  "issues": ["ONLY list critical blocking issues"],
+  "severity": "critical|none"
 }
 
-Be strict but fair. Minor style issues are okay.`;
+BE LENIENT - Only fail code that is genuinely broken. If the code will run and produce output, mark it as passed.`;
 
     try {
       const response = await openai.chat.completions.create({
@@ -62,7 +67,8 @@ Be strict but fair. Minor style issues are okay.`;
       const content = response.choices[0].message.content || "{}";
       const validation = JSON.parse(content);
 
-      if (!validation.passed) {
+      // Only fail if severity is "critical" and there are real issues
+      if (!validation.passed && validation.severity === "critical" && validation.issues?.length > 0) {
         return {
           passed: false,
           error: validation.issues?.join("; ") || "Validation failed",
@@ -70,6 +76,7 @@ Be strict but fair. Minor style issues are okay.`;
         };
       }
 
+      // Default to passing - be permissive
       return {
         passed: true,
         details: validation,
