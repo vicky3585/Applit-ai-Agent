@@ -3,6 +3,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import TopBar from "@/components/TopBar";
 import FileExplorer from "@/components/FileExplorer";
 import CodeEditor from "@/components/CodeEditor";
+import CodeServerFrame from "@/components/CodeServerFrame";
+import LivePreview from "@/components/LivePreview";
 import ChatPanel from "@/components/ChatPanel";
 import TerminalPanel from "@/components/TerminalPanel";
 import AgentStatePanel from "@/components/AgentStatePanel";
@@ -27,6 +29,7 @@ export default function IDE() {
   const [agentStatus, setAgentStatus] = useState<"idle" | "planning" | "coding" | "testing" | "fixing">("idle");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState("chat");
+  const [editorView, setEditorView] = useState<"custom" | "code-server" | "preview">("custom");
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessage, setStreamingMessage] = useState("");
@@ -243,20 +246,52 @@ export default function IDE() {
 
         <ResizablePanel defaultSize={60} minSize={40}>
           <div className="flex flex-col h-full">
-            <div className="flex-1 overflow-hidden">
-              <CodeEditor
-                tabs={openTabs}
-                activeTabId={activeTabId || undefined}
-                onTabChange={setActiveTabId}
-                onTabClose={handleTabClose}
-                onContentChange={handleContentChange}
+            {/* Editor view tabs */}
+            <Tabs value={editorView} onValueChange={(v: any) => setEditorView(v)} className="flex flex-col flex-1 overflow-hidden">
+              <TabsList className="w-full justify-start rounded-none border-b h-9 bg-muted/30">
+                <TabsTrigger value="custom" className="text-xs" data-testid="tab-editor-custom">
+                  Editor
+                </TabsTrigger>
+                <TabsTrigger value="code-server" className="text-xs" data-testid="tab-editor-vscode">
+                  VS Code
+                </TabsTrigger>
+                <TabsTrigger value="preview" className="text-xs" data-testid="tab-editor-preview">
+                  Preview
+                </TabsTrigger>
+              </TabsList>
+
+              {/* Custom Editor */}
+              <TabsContent value="custom" className="flex flex-col flex-1 m-0 overflow-hidden">
+                <div className="flex-1 overflow-hidden">
+                  <CodeEditor
+                    tabs={openTabs}
+                    activeTabId={activeTabId || undefined}
+                    onTabChange={setActiveTabId}
+                    onTabClose={handleTabClose}
+                    onContentChange={handleContentChange}
+                  />
+                </div>
+              </TabsContent>
+
+              {/* code-server (VS Code) */}
+              <TabsContent value="code-server" className="flex-1 m-0 overflow-hidden">
+                <CodeServerFrame workspaceId={WORKSPACE_ID} />
+              </TabsContent>
+
+              {/* Live Preview */}
+              <TabsContent value="preview" className="flex-1 m-0 overflow-hidden">
+                <LivePreview />
+              </TabsContent>
+            </Tabs>
+
+            {/* Terminal (shown for all views except preview) */}
+            {editorView !== "preview" && (
+              <TerminalPanel
+                lines={terminalLines}
+                onCommand={handleTerminalCommand}
+                onClear={() => setTerminalLines([])}
               />
-            </div>
-            <TerminalPanel
-              lines={terminalLines}
-              onCommand={handleTerminalCommand}
-              onClear={() => setTerminalLines([])}
-            />
+            )}
           </div>
         </ResizablePanel>
 

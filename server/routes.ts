@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import { createProxyMiddleware } from "http-proxy-middleware";
 import { storage } from "./storage-factory";
 import { sandbox } from "./sandbox";
 import OpenAI from "openai";
@@ -307,6 +308,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ error: error.message });
     }
   });
+
+  // Store proxy instances for WebSocket upgrade handling
+  const proxies: Array<{ path: string; proxy: any }> = [];
+
+  // Code-server proxy (only in local mode with Docker)
+  if (ENV_CONFIG.codeServer.mode === "docker" && ENV_CONFIG.codeServer.url) {
+    console.log(`[Proxy] Setting up code-server proxy to ${ENV_CONFIG.codeServer.url}`);
+    
+    const codeServerProxy = createProxyMiddleware({
+      target: ENV_CONFIG.codeServer.url,
+      changeOrigin: true,
+      ws: true, // Enable WebSocket proxying
+      pathRewrite: {
+        "^/code-server": "", // Remove /code-server prefix when forwarding
+      },
+      logger: console,
+    });
+    
+    app.use("/code-server", codeServerProxy);
+    proxies.push({ path: "/code-server", proxy: codeServerProxy });
+  }
+
+  // Live preview proxy for running web apps (port 3000 in sandbox)
+  if (ENV_CONFIG.sandbox.mode === "docker") {
+    console.log("[Proxy] Setting up live preview proxy to sandbox:3000");
+    
+    const previewProxy = createProxyMiddleware({
+      target: "http://sandbox:3000", // Default development server port
+      changeOrigin: true,
+      ws: true, // Enable WebSocket for hot reload
+      pathRewrite: {
+        "^/preview": "",
+      },
+      logger: console,
+    });
+    
+    app.use("/preview", previewProxy);
+    proxies.push({ path: "/preview", proxy: previewProxy });
+  }
+
+  // Register WebSocket upgrade handler for all proxies
+  if (proxies.length > 0) {
+    httpServer.on("upgrade", (req, socket, head) => {
+      const url = req.url || "";
+      
+      // Find matching proxy by path prefix
+      for (const { path, proxy } of proxies) {
+        if (url.startsWith(path)) {
+          console.log(`[Proxy] Upgrading WebSocket for ${path}`);
+          proxy.upgrade!(req, socket, head);
+          return;
+        }
+      }
+      
+      // No matching proxy - let the default WebSocket handler take over
+      console.log(`[Proxy] No proxy matched for upgrade: ${url}`);
+    });
+  }
 
   return httpServer;
 }
