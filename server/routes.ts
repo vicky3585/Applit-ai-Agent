@@ -10,6 +10,7 @@ import { installPackageRequestSchema } from "@shared/schema";
 import { templates, getTemplateById } from "./templates";
 import * as github from "./github";
 import * as git from "./git";
+import { initializeYjsProvider } from "./yjs-provider";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -17,6 +18,10 @@ const openai = new OpenAI({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
+  
+  // Initialize Yjs provider for real-time collaborative editing (Phase 7)
+  const yjsProvider = initializeYjsProvider(httpServer, await storage);
+  console.log("[Phase 7] Yjs collaborative editing provider initialized");
   
   // WebSocket server for real-time communication
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
