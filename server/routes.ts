@@ -248,6 +248,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(file);
   });
 
+  app.patch("/api/files/:id/rename", async (req, res) => {
+    const { newPath } = req.body;
+    if (!newPath) {
+      return res.status(400).json({ error: "newPath is required" });
+    }
+    
+    try {
+      const file = await storage.renameFile(req.params.id, newPath);
+      if (!file) {
+        return res.status(404).json({ error: "File not found" });
+      }
+      res.json(file);
+    } catch (error: any) {
+      if (error.message === "A file already exists at the target path") {
+        return res.status(409).json({ error: error.message });
+      }
+      throw error;
+    }
+  });
+
   app.delete("/api/files/:id", async (req, res) => {
     await storage.deleteFile(req.params.id);
     res.json({ success: true });

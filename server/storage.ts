@@ -27,8 +27,10 @@ export interface IStorage {
   // File methods
   getFile(id: string): Promise<File | undefined>;
   getFilesByWorkspace(workspaceId: string): Promise<File[]>;
+  getFileByPath(workspaceId: string, path: string): Promise<File | undefined>;
   createFile(workspaceId: string, path: string, content: string, language?: string): Promise<File>;
   updateFile(id: string, content: string): Promise<File | undefined>;
+  renameFile(id: string, newPath: string): Promise<File | undefined>;
   deleteFile(id: string): Promise<void>;
   
   // Chat methods
@@ -177,6 +179,12 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async getFileByPath(workspaceId: string, path: string): Promise<File | undefined> {
+    return Array.from(this.files.values()).find(
+      (file) => file.workspaceId === workspaceId && file.path === path
+    );
+  }
+
   async createFile(
     workspaceId: string,
     path: string,
@@ -210,6 +218,34 @@ export class MemStorage implements IStorage {
       // Sync updated file to disk in local mode
       await fileSync.syncFile(file);
     }
+    return file;
+  }
+
+  async renameFile(id: string, newPath: string): Promise<File | undefined> {
+    const file = this.files.get(id);
+    if (!file) {
+      return undefined;
+    }
+    
+    // Check if target path already exists (excluding the current file)
+    const existing = await this.getFileByPath(file.workspaceId, newPath);
+    if (existing && existing.id !== id) {
+      throw new Error("A file already exists at the target path");
+    }
+    
+    const oldPath = file.path;
+    
+    // Delete old file from disk
+    await fileSync.deleteFile(file.workspaceId, oldPath);
+    
+    // Update path
+    file.path = newPath;
+    file.updatedAt = new Date();
+    this.files.set(id, file);
+    
+    // Sync new file to disk
+    await fileSync.syncFile(file);
+    
     return file;
   }
 

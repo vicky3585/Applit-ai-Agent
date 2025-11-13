@@ -150,6 +150,19 @@ export class PostgresStorage implements IStorage {
     return await db.select().from(files).where(eq(files.workspaceId, workspaceId));
   }
 
+  async getFileByPath(workspaceId: string, path: string): Promise<File | undefined> {
+    const [file] = await db
+      .select()
+      .from(files)
+      .where(
+        and(
+          eq(files.workspaceId, workspaceId),
+          eq(files.path, path)
+        )
+      );
+    return file || undefined;
+  }
+
   async createFile(
     workspaceId: string,
     path: string,
@@ -176,6 +189,37 @@ export class PostgresStorage implements IStorage {
     
     if (file) {
       // Sync to disk
+      await fileSync.syncFiles([file]);
+    }
+    
+    return file || undefined;
+  }
+
+  async renameFile(id: string, newPath: string): Promise<File | undefined> {
+    // Get file record first to clean up old disk location
+    const oldFile = await this.getFile(id);
+    if (!oldFile) {
+      return undefined;
+    }
+    
+    // Check if target path already exists (excluding the current file)
+    const existing = await this.getFileByPath(oldFile.workspaceId, newPath);
+    if (existing && existing.id !== id) {
+      throw new Error("A file already exists at the target path");
+    }
+    
+    // Update file path in database
+    const [file] = await db
+      .update(files)
+      .set({ path: newPath, updatedAt: new Date() })
+      .where(eq(files.id, id))
+      .returning();
+    
+    if (file && oldFile) {
+      // Delete old file from disk
+      await fileSync.deleteFile(oldFile.workspaceId, oldFile.path);
+      
+      // Sync new file to disk
       await fileSync.syncFiles([file]);
     }
     
