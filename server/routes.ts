@@ -335,6 +335,72 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // ========================================
+  // Multi-Project Management (Task V1-7)
+  // ========================================
+
+  // GET /api/workspaces - List all workspaces for current user
+  app.get("/api/workspaces", async (req, res) => {
+    try {
+      // TODO: Get userId from authenticated session
+      const userId = "user1"; // Default user for now
+      const workspaces = await storage.getWorkspacesByUserId(userId);
+      res.json(workspaces);
+    } catch (error: any) {
+      console.error("[Workspaces] List error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces - Create new workspace
+  app.post("/api/workspaces", async (req, res) => {
+    try {
+      const { name } = req.body;
+      
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "Workspace name is required" });
+      }
+
+      // TODO: Get userId from authenticated session
+      const userId = "user1"; // Default user for now
+      
+      const workspace = await storage.createWorkspace(name.trim(), userId);
+      console.log(`[Workspaces] Created workspace: ${workspace.id} (${workspace.name})`);
+      
+      res.status(201).json(workspace);
+    } catch (error: any) {
+      console.error("[Workspaces] Create error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // DELETE /api/workspaces/:id - Delete workspace
+  app.delete("/api/workspaces/:id", async (req, res) => {
+    try {
+      const workspaceId = req.params.id;
+      
+      // Verify workspace exists
+      const workspace = await storage.getWorkspace(workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+
+      // TODO: Verify user owns this workspace
+      
+      await storage.deleteWorkspace(workspaceId);
+      console.log(`[Workspaces] Deleted workspace: ${workspaceId} (${workspace.name})`);
+      
+      res.json({ success: true, message: "Workspace deleted successfully" });
+    } catch (error: any) {
+      console.error("[Workspaces] Delete error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ========================================
+  // Workspace Operations
+  // ========================================
+
   app.get("/api/workspaces/:id", async (req, res) => {
     const workspace = await storage.getWorkspace(req.params.id);
     if (!workspace) {
