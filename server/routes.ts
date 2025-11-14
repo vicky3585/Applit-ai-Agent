@@ -1321,6 +1321,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       broadcastProgress("Template applied successfully!");
 
+      // AUTO-START DEV SERVER (Task 2: Auto-Start Dev Server After Template Application)
+      let devServerInfo = null;
+      if (template.devCommand) {
+        try {
+          const { getDevServerManager } = await import("./dev-server-manager");
+          const { getFilePersistence } = await import("./file-persistence");
+          
+          const manager = getDevServerManager();
+          const persistence = getFilePersistence();
+          
+          // Sync all files to disk first (required for dev server)
+          broadcastProgress("Syncing files to disk...");
+          for (const file of createdFiles) {
+            await persistence.saveFile(workspaceId, file.path, file.content);
+          }
+          console.log(`[Templates] Synced ${createdFiles.length} files to disk`);
+          
+          // Construct workspace path (matches FilePersistence pattern)
+          const { ENV_CONFIG: envConfig } = await import("@shared/environment");
+          const path = await import("path");
+          let workspaceRoot = envConfig.env === "local" 
+            ? "/tmp/ide-workspaces"
+            : process.env.TMPDIR || "/tmp/ide-workspaces";
+          const workspacePath = path.join(workspaceRoot, workspaceId);
+          
+          // Start dev server
+          broadcastProgress("Starting dev server...");
+          const server = await manager.startServer(workspaceId, workspacePath);
+          
+          if (server) {
+            console.log(`[Templates] Dev server started on port ${server.port}`);
+            broadcastProgress(`Dev server running on port ${server.port}`);
+            devServerInfo = {
+              port: server.port,
+              url: server.url,
+              type: server.type,
+            };
+          } else {
+            console.log(`[Templates] Could not auto-start dev server`);
+            broadcastProgress("Template ready - start dev server manually if needed");
+          }
+        } catch (error: any) {
+          console.error("[Templates] Dev server start error:", error);
+          broadcastProgress(`Warning: Could not start dev server - ${error.message}`);
+        }
+      }
+
       res.json({
         success: true,
         template: {
@@ -1330,6 +1377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         filesCreated: createdFiles.length,
         devCommand: template.devCommand,
         buildCommand: template.buildCommand,
+        devServer: devServerInfo,
       });
     } catch (error: any) {
       console.error("[Templates] Apply error:", error);

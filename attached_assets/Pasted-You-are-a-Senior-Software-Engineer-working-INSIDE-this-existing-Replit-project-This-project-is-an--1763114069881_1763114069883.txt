@@ -1,0 +1,154 @@
+You are a Senior Software Engineer working INSIDE this existing Replit project. This project is an “AI Web IDE” that should work as a professional, Replit-like online IDE.
+
+Your job: **Do NOT rebuild from scratch.** Starting from the current codebase, evolve it into a **usable v1 Replit-like IDE** with a clean, professional implementation.
+
+🎯 HIGH-LEVEL GOAL (V1)
+Make this IDE good enough that a single developer can:
+
+1. Open the IDE in the browser and see:
+   - File tree
+   - Monaco (or VS Code-like) editor
+   - Terminal
+   - Live preview pane
+
+2. Create and run a project:
+   - Create a new project from a template (e.g. React/Next.js/Node/Python).
+   - Install dependencies (npm/pip) in an isolated sandbox.
+   - Run the dev server in a container.
+   - See hot-reload in a live preview frame (proxy to dev server).
+
+3. Use AI to modify the project:
+   - User gives a natural language task (e.g. “add a TODO list to homepage”).
+   - AI reads the repo, edits files, installs needed packages, and runs the app/tests.
+   - Show what changed (files, diffs, logs) in a clear UI.
+
+4. Persist and reopen:
+   - Projects and files are stored in the database.
+   - User can refresh or come back later and reopen projects.
+
+Focus on **professional quality**, but keep the scope realistic. You are allowed to leave TODO comments for “Phase 8/9/10” style advanced features, but DO NOT work on GPU/offline, billing, or large-scale deployment in this Replit environment. Concentrate on **Core IDE + Basic AI workflow** only.
+
+---
+
+📌 SPECIFIC PRIORITIES (WORK INSIDE CURRENT STACK)
+
+1) COMPLETE CORE IDE (Phase 2B focus)
+- Make the IDE feel like VS Code/Replit:
+  - Ensure Monaco editor is fully wired (tabs, save, search, basic shortcuts).
+  - Implement a robust file tree:
+    - Create/rename/delete files & folders.
+    - Drag-and-drop moves.
+    - Bulk operations.
+  - Add a live preview system:
+    - Each project runs in an isolated environment (Docker or Replit-friendly sandbox).
+    - Map the dev server port (e.g. 3000) to a preview route (e.g. /preview/:projectId).
+    - Support hot-reload for frameworks like React/Next.js.
+  - Add keyboard shortcuts:
+    - Save (Ctrl/Cmd+S), find (Ctrl/Cmd+F), file search (Ctrl/Cmd+P), etc.
+
+- Wire PostgreSQL + Drizzle (or equivalent) as storage:
+  - Store users (even if v1 is single user, design it for multi-user later).
+  - Store projects/workspaces.
+  - Store file metadata and content (or reference to file storage).
+  - Store sessions/rooms for multiplayer if already present (reuse existing Yjs integration).
+
+2) BASIC AI PROMPT-TO-APP WORKFLOW (Phase 3 MINIMUM)
+Implement a **simple but real** AI workflow using the existing AI integration:
+
+- Architecture:
+  - Planner: reads user request and breaks it into steps.
+  - Coder: edits files (read/write, diff), decides commands.
+  - Runner: executes commands in sandbox (e.g. npm install, npm run dev, tests) and returns logs.
+
+- Behavior:
+  - When user gives a task:
+    - Planner → Coder → Runner loop:
+      - Create or update files.
+      - Install dependencies if imports are missing (with confirmation or an “auto” policy).
+      - Optionally generate 1–2 basic tests and run them.
+  - Limit retries (e.g. max 3 attempts per task) to avoid infinite loops.
+
+- User feedback:
+  - Show:
+    - List of changed files.
+    - Short explanation of what was done.
+    - Command logs (install/run/test).
+    - Any remaining TODOs.
+
+3) MINIMAL DEVELOPER TOOLS (Phase 4 LIGHT)
+Add only the most important tools for now:
+
+- Visual package manager:
+  - UI to search and install/uninstall npm packages for the current project.
+  - Under the hood, it runs the appropriate commands in the sandbox.
+
+- Project templates:
+  - At least 3–4 templates:
+    - React SPA
+    - Next.js app
+    - Node+Express API
+    - Python Flask or FastAPI
+  - Make “Create Project” UI use these templates.
+
+- Basic Git controls (optional but nice if time allows):
+  - Initialize repo if missing.
+  - Simple “Commit” and “Push to GitHub” with clear status messages.
+
+4) BASIC AUTH & MULTI-PROJECT (Phase 5 LIGHT)
+Do a simple production-friendly structure without overcomplicating it:
+
+- Auth:
+  - Simple JWT-based auth (email/password or even a single configured admin for now).
+  - Protect project actions behind login.
+
+- Multi-project dashboard:
+  - List user’s projects.
+  - Create, open, rename, delete projects.
+
+- Sandbox lifecycle:
+  - One sandbox/container per active project.
+  - Auto-stop inactive sandboxes after some idle time.
+
+---
+
+❗ IMPORTANT CONSTRAINTS
+
+- Work **within the existing architecture and files** of this Replit project.
+- Do NOT attempt:
+  - Full GPU/vLLM integration,
+  - Offline mode,
+  - Billing or payments,
+  - Massive production scaling (Kubernetes, multi-region, etc.).
+- It’s okay to leave structured TODOs for:
+  - Advanced AI autocomplete,
+  - Self-testing AI,
+  - GPU/offline mode,
+  - Billing and analytics dashboards.
+
+---
+
+✅ DELIVERABLES FOR THIS SESSION
+
+1. Clean, working implementation of:
+   - Core IDE features (file tree, editor, terminal, live preview).
+   - Project creation from templates.
+   - Basic AI prompt-to-app workflow (Planner + Coder + Runner loop).
+   - Persistence of users/projects/files in the DB.
+
+2. Clear explanations:
+   - Brief summary of what you changed.
+   - IMPORTANT new files and directories and their purpose.
+   - How to:
+     - Start the IDE in Replit,
+     - Create a project,
+     - Run it,
+     - Use AI to modify it.
+
+3. Add TODO comments and README updates:
+   - List the remaining future phases (GPU/offline, Copilot-style autocomplete, billing, etc.).
+   - Do not implement them now—only document where they will hook in.
+
+Start by:
+- Reading the existing code and architecture.
+- Explaining briefly how it currently works.
+- Then implement the changes step by step, testing as you go.
