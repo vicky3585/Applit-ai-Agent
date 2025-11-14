@@ -14,6 +14,10 @@ import {
   files,
   chatMessages,
   agentExecutions,
+  packages,
+  codeExecutions,
+  workspaceSettings,
+  yjsDocuments,
   type User,
   type InsertUser,
   type Session,
@@ -22,6 +26,12 @@ import {
   type File,
   type ChatMessage,
   type AgentExecution,
+  type Package,
+  type InsertPackage,
+  type CodeExecution,
+  type WorkspaceSettings,
+  type UpdateWorkspaceSettings,
+  type YjsDocument,
 } from "@shared/schema";
 import { fileSync } from "./file-sync";
 import type { IStorage } from "./storage";
@@ -124,14 +134,17 @@ export class PostgresStorage implements IStorage {
     return user || undefined;
   }
 
-  // Shared helper: Enforce session cap with user-level locking
+  // Shared helper: Enforce session cap with advisory locking
+  // Uses PostgreSQL advisory locks for guaranteed mutual exclusion without requiring user row to exist
   private async withSessionLock<T>(
     userId: string,
     mutation: (tx: any) => Promise<T>
   ): Promise<T> {
     return await db.transaction(async (tx) => {
-      // Lock user row to serialize all session operations for this user
-      await tx.execute(sql`SELECT 1 FROM ${users} WHERE id = ${userId} FOR UPDATE`);
+      // Use PostgreSQL advisory lock based on userId hash
+      // This guarantees mutual exclusion even if user doesn't exist
+      const userIdHash = userId.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${userIdHash})`);
       
       // Execute mutation with lock held
       const result = await mutation(tx);
@@ -412,50 +425,247 @@ export class PostgresStorage implements IStorage {
       attempt_count?: number;
       last_failed_step?: string | null;
       logs: any[];
+      structuredLogs?: any[]; // Phase 2: Structured logs
       files_generated: any[];
       errors: any[];
     }
   ): Promise<AgentExecution> {
-    // Try to find existing execution
-    const existing = await this.getAgentExecution(workspaceId);
+    // Use transaction with FOR UPDATE lock to prevent concurrent update race conditions
+    return await db.transaction(async (tx) => {
+      // Lock and fetch existing execution (if exists)
+      const [existing] = await tx
+        .select()
+        .from(agentExecutions)
+        .where(eq(agentExecutions.workspaceId, workspaceId))
+        .orderBy(desc(agentExecutions.updatedAt))
+        .limit(1)
+        .for('update');
 
-    if (existing) {
-      // Update existing execution
-      const [updated] = await db
-        .update(agentExecutions)
-        .set({
-          prompt: data.prompt || existing.prompt,
-          status: data.status,
-          current_step: data.current_step,
-          progress: data.progress,
-          attempt_count: data.attempt_count !== undefined ? data.attempt_count : existing.attempt_count,
-          last_failed_step: data.last_failed_step !== undefined ? data.last_failed_step : existing.last_failed_step,
-          logs: data.logs,
-          files_generated: data.files_generated,
-          errors: data.errors,
-          updatedAt: new Date(),
-        })
-        .where(eq(agentExecutions.id, existing.id))
-        .returning();
-      return updated;
-    } else {
-      // Create new execution
-      const [created] = await db
-        .insert(agentExecutions)
-        .values({
-          workspaceId,
-          prompt: data.prompt || null,
-          status: data.status,
-          current_step: data.current_step,
-          progress: data.progress,
-          attempt_count: data.attempt_count || 0,
-          last_failed_step: data.last_failed_step ?? null,
-          logs: data.logs,
-          files_generated: data.files_generated,
-          errors: data.errors,
-        })
-        .returning();
-      return created;
+      if (existing) {
+        // Preserve existing logs/structured logs by concatenating arrays (prevent data loss)
+        const existingLogs = Array.isArray(existing.logs) ? existing.logs : [];
+        const existingStructuredLogs = Array.isArray(existing.structuredLogs) ? existing.structuredLogs : [];
+        
+        const updatedLogs = data.logs && data.logs.length > 0 ? [...existingLogs, ...data.logs] : existingLogs;
+        const updatedStructuredLogs = data.structuredLogs && data.structuredLogs.length > 0 
+          ? [...existingStructuredLogs, ...data.structuredLogs] 
+          : existingStructuredLogs;
+        
+        // Update existing execution
+        const [updated] = await tx
+          .update(agentExecutions)
+          .set({
+            prompt: data.prompt || existing.prompt,
+            status: data.status,
+            current_step: data.current_step,
+            progress: data.progress,
+            attempt_count: data.attempt_count !== undefined ? data.attempt_count : existing.attempt_count,
+            last_failed_step: data.last_failed_step !== undefined ? data.last_failed_step : existing.last_failed_step,
+            logs: updatedLogs,
+            structuredLogs: updatedStructuredLogs,
+            files_generated: data.files_generated,
+            errors: data.errors,
+            updatedAt: new Date(),
+          })
+          .where(eq(agentExecutions.id, existing.id))
+          .returning();
+        return updated;
+      } else {
+        // Create new execution
+        const [created] = await tx
+          .insert(agentExecutions)
+          .values({
+            workspaceId,
+            prompt: data.prompt || null,
+            status: data.status,
+            current_step: data.current_step,
+            progress: data.progress,
+            attempt_count: data.attempt_count || 0,
+            last_failed_step: data.last_failed_step ?? null,
+            logs: data.logs,
+            structuredLogs: data.structuredLogs || [],
+            files_generated: data.files_generated,
+            errors: data.errors,
+          })
+          .returning();
+        return created;
+      }
+    });
+  }
+
+  // Package methods
+  async getPackages(workspaceId: string): Promise<Package[]> {
+    return await db
+      .select()
+      .from(packages)
+      .where(eq(packages.workspaceId, workspaceId));
+  }
+
+  async upsertPackage(
+    workspaceId: string,
+    name: string,
+    version: string | null,
+    packageManager: string
+  ): Promise<Package> {
+    // Try to insert, on conflict update
+    const [pkg] = await db
+      .insert(packages)
+      .values({ workspaceId, name, version, packageManager })
+      .onConflictDoUpdate({
+        target: [packages.workspaceId, packages.packageManager, packages.name],
+        set: { version, installedAt: new Date() },
+      })
+      .returning();
+    
+    return pkg;
+  }
+
+  async deletePackage(id: string): Promise<void> {
+    await db.delete(packages).where(eq(packages.id, id));
+  }
+
+  // Code execution methods
+  async getCodeExecution(id: string): Promise<CodeExecution | undefined> {
+    const [execution] = await db
+      .select()
+      .from(codeExecutions)
+      .where(eq(codeExecutions.id, id));
+    return execution || undefined;
+  }
+
+  async getCodeExecutions(workspaceId: string): Promise<CodeExecution[]> {
+    return await db
+      .select()
+      .from(codeExecutions)
+      .where(eq(codeExecutions.workspaceId, workspaceId))
+      .orderBy(desc(codeExecutions.startedAt));
+  }
+
+  async createCodeExecution(
+    workspaceId: string,
+    filePath: string,
+    language?: string
+  ): Promise<CodeExecution> {
+    const [execution] = await db
+      .insert(codeExecutions)
+      .values({
+        workspaceId,
+        filePath,
+        language,
+        status: "running",
+      })
+      .returning();
+    return execution;
+  }
+
+  async updateCodeExecution(
+    id: string,
+    updates: Partial<Pick<CodeExecution, 'status' | 'output' | 'error' | 'exitCode' | 'completedAt'>>
+  ): Promise<CodeExecution | undefined> {
+    // Ensure completedAt is set if status is 'completed' or 'failed'
+    const finalUpdates = {
+      ...updates,
+      completedAt: updates.status && ['completed', 'failed'].includes(updates.status) 
+        ? (updates.completedAt || new Date())
+        : updates.completedAt,
+    };
+    
+    const [execution] = await db
+      .update(codeExecutions)
+      .set(finalUpdates)
+      .where(eq(codeExecutions.id, id))
+      .returning();
+    return execution || undefined;
+  }
+
+  async appendCodeExecutionOutput(id: string, chunk: string): Promise<CodeExecution | undefined> {
+    // Get current execution
+    const execution = await this.getCodeExecution(id);
+    if (!execution) {
+      return undefined;
     }
+
+    // Append to output
+    const newOutput = (execution.output || "") + chunk;
+
+    // Update with appended output
+    const [updated] = await db
+      .update(codeExecutions)
+      .set({ output: newOutput })
+      .where(eq(codeExecutions.id, id))
+      .returning();
+    
+    return updated || undefined;
+  }
+
+  // Settings methods
+  async getWorkspaceSettings(workspaceId: string): Promise<WorkspaceSettings | undefined> {
+    const [settings] = await db
+      .select()
+      .from(workspaceSettings)
+      .where(eq(workspaceSettings.workspaceId, workspaceId));
+    return settings || undefined;
+  }
+
+  async upsertWorkspaceSettings(
+    workspaceId: string,
+    settings: UpdateWorkspaceSettings
+  ): Promise<WorkspaceSettings> {
+    // Try to insert, on conflict update (always set updatedAt timestamp)
+    const now = new Date();
+    const [result] = await db
+      .insert(workspaceSettings)
+      .values({ workspaceId, ...settings, updatedAt: now })
+      .onConflictDoUpdate({
+        target: [workspaceSettings.workspaceId],
+        set: { ...settings, updatedAt: now },
+      })
+      .returning();
+    
+    return result;
+  }
+
+  // Yjs document methods (Phase 7 - Multiplayer)
+  async getYjsDocument(workspaceId: string, docName: string): Promise<YjsDocument | undefined> {
+    const [doc] = await db
+      .select()
+      .from(yjsDocuments)
+      .where(
+        and(
+          eq(yjsDocuments.workspaceId, workspaceId),
+          eq(yjsDocuments.docName, docName)
+        )
+      );
+    return doc || undefined;
+  }
+
+  async upsertYjsDocument(
+    workspaceId: string,
+    docName: string,
+    state: string,
+    stateVector: string
+  ): Promise<YjsDocument> {
+    // Try to insert, on conflict update
+    const [doc] = await db
+      .insert(yjsDocuments)
+      .values({ workspaceId, docName, state, stateVector })
+      .onConflictDoUpdate({
+        target: [yjsDocuments.workspaceId, yjsDocuments.docName],
+        set: { state, stateVector, updatedAt: new Date() },
+      })
+      .returning();
+    
+    return doc;
+  }
+
+  async deleteYjsDocument(workspaceId: string, docName: string): Promise<void> {
+    await db
+      .delete(yjsDocuments)
+      .where(
+        and(
+          eq(yjsDocuments.workspaceId, workspaceId),
+          eq(yjsDocuments.docName, docName)
+        )
+      );
   }
 }

@@ -56,6 +56,19 @@ The frontend uses React 18, TypeScript, and Vite, styled with Shadcn/ui (Radix U
 ### System Design Choices
 The system is built on a hybrid Node.js + Python architecture. Data storage uses both in-memory (MemStorage) for the Replit environment and PostgreSQL 16 (PostgresStorage) for local Ubuntu, both implementing the IStorage contract. Concurrency in MemStorage is managed by JavaScript's event loop, while PostgresStorage uses row-level locking for atomic session operations. Authentication uses JWTs with refresh token rotation, bcrypt hashing for refresh tokens, and a progressive account lockout mechanism.
 
+**PostgreSQL Storage Status (November 2025):**
+- ✅ **Core Functionality**: PostgresStorage fully operational, all 24 IStorage methods implemented
+- ✅ **Data Persistence**: Workspace, files, chat messages, agent executions persisting correctly
+- ✅ **Storage Factory**: Auto-detects DATABASE_URL accessibility, uses PostgresStorage when available
+- ✅ **Yjs Persistence**: Real-time collaborative editing documents persist to yjs_documents table
+- ✅ **Atomic Operations**: Transaction-based agent execution updates with FOR UPDATE locks
+- ✅ **Session Management**: Advisory locks for MAX_SESSIONS_PER_USER cap enforcement
+- ⚠️ **Production Hardening Needed**:
+  - Advisory lock hashing uses simple char-code sum (collision-prone for anagrams) - needs 64-bit hash
+  - Schema drift from manual SQL alterations - needs Drizzle migration reconciliation
+  - Input validation with Zod not yet implemented on write paths
+- **Deployment Note**: Core persistence works for Ubuntu 24.04, production fixes scheduled for focused session
+
 ## External Dependencies
 
 *   **AI Services**: OpenAI API

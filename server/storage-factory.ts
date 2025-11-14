@@ -11,27 +11,28 @@ import { MemStorage, type IStorage } from "./storage";
 
 /**
  * Create and initialize storage instance based on environment
+ * 
+ * Priority order:
+ * 1. If DATABASE_URL is accessible → PostgresStorage (regardless of environment)
+ * 2. Otherwise → MemStorage
+ * 
+ * This allows using PostgresStorage even in Replit if DATABASE_URL is configured.
  */
 async function createStorage(): Promise<IStorage> {
   let storage: IStorage;
   
-  if (ENV_CONFIG.database.mode === "local") {
-    // Check if PostgreSQL is actually accessible
-    const dbAvailable = await validateDatabaseAccess();
+  // Check if PostgreSQL is actually accessible (priority check)
+  const dbAvailable = await validateDatabaseAccess();
+  
+  if (dbAvailable) {
+    console.log("[Storage] Using PostgreSQL storage (DATABASE_URL accessible)");
     
-    if (dbAvailable) {
-      console.log("[Storage] Using PostgreSQL storage (local mode)");
-      
-      // Lazy import to avoid DATABASE_URL requirement in Replit mode
-      const { PostgresStorage } = await import("./pg-storage");
-      storage = new PostgresStorage();
-    } else {
-      console.log("[Storage] PostgreSQL not accessible, falling back to in-memory");
-      storage = new MemStorage();
-    }
+    // Lazy import to avoid DATABASE_URL requirement when not available
+    const { PostgresStorage } = await import("./pg-storage");
+    storage = new PostgresStorage();
   } else {
-    // Replit mode - use in-memory storage
-    console.log("[Storage] Using in-memory storage (Replit mode)");
+    // Fall back to in-memory storage
+    console.log(`[Storage] Using in-memory storage (PostgreSQL not accessible, env: ${ENV_CONFIG.env})`);
     storage = new MemStorage();
   }
   

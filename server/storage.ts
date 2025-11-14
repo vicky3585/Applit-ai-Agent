@@ -96,6 +96,12 @@ export interface IStorage {
   getYjsDocument(workspaceId: string, docName: string): Promise<YjsDocument | undefined>;
   upsertYjsDocument(workspaceId: string, docName: string, state: string, stateVector: string): Promise<YjsDocument>;
   deleteYjsDocument(workspaceId: string, docName: string): Promise<void>;
+  
+  // Deployment methods (Priority 0 - Ubuntu Static Deployment)
+  createDeployment(workspaceId: string, status: string, buildCommand?: string): Promise<import("@shared/schema").Deployment>;
+  updateDeployment(id: string, updates: Partial<Pick<import("@shared/schema").Deployment, 'status' | 'buildLogs' | 'artifactPath' | 'url' | 'errorMessage' | 'completedAt'>>): Promise<import("@shared/schema").Deployment | undefined>;
+  getDeployments(workspaceId: string): Promise<import("@shared/schema").Deployment[]>;
+  getLatestDeployment(workspaceId: string): Promise<import("@shared/schema").Deployment | undefined>;
 }
 
 export class MemStorage implements IStorage {

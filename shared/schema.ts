@@ -110,6 +110,24 @@ export const workspaceSettings = pgTable("workspace_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Deployment System (Priority 0 - Ubuntu Static Deployment)
+export const deployments = pgTable("deployments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  status: text("status").notNull(), // 'pending' | 'building' | 'success' | 'failed'
+  buildCommand: text("build_command"), // Command executed (e.g., 'npm run build')
+  buildLogs: jsonb("build_logs").default(sql`'[]'::jsonb`), // Array of log messages
+  artifactPath: text("artifact_path"), // Path to built files (e.g., /var/www/ai-ide/workspace-id/current)
+  url: text("url"), // Deployment URL (e.g., http://localhost/apps/workspace-id/)
+  errorMessage: text("error_message"), // Error message if failed
+  createdAt: timestamp("created_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+}, (table) => ({
+  workspaceIdIdx: sql`CREATE INDEX IF NOT EXISTS deployments_workspace_id_idx ON ${table} (${table.workspaceId})`,
+  statusIdx: sql`CREATE INDEX IF NOT EXISTS deployments_status_idx ON ${table} (${table.status})`,
+  createdAtIdx: sql`CREATE INDEX IF NOT EXISTS deployments_created_at_idx ON ${table} (${table.createdAt})`,
+}));
+
 // Multiplayer Collaboration Tables (Phase 7)
 export const collaborators = pgTable("collaborators", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -243,6 +261,15 @@ export const installPackageRequestSchema = z.object({
   packageManager: z.enum(["npm", "pip", "apt"]),
 });
 
+// Deployment Schemas (Priority 0 - Ubuntu Static Deployment)
+export const insertDeploymentSchema = createInsertSchema(deployments).pick({
+  workspaceId: true,
+  status: true,
+  buildCommand: true,
+});
+
+export const deploymentStatusSchema = z.enum(["pending", "building", "success", "failed"]);
+
 // Multiplayer Schemas (Phase 7)
 export const insertCollaboratorSchema = createInsertSchema(collaborators).pick({
   workspaceId: true,
@@ -287,6 +314,9 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type AgentExecution = typeof agentExecutions.$inferSelect;
 export type Package = typeof packages.$inferSelect;
 export type CodeExecution = typeof codeExecutions.$inferSelect;
+export type Deployment = typeof deployments.$inferSelect;
+export type InsertDeployment = z.infer<typeof insertDeploymentSchema>;
+export type DeploymentStatus = z.infer<typeof deploymentStatusSchema>;
 export type Collaborator = typeof collaborators.$inferSelect;
 export type YjsDocument = typeof yjsDocuments.$inferSelect;
 export type CollaborationChatMessage = typeof collaborationChatMessages.$inferSelect;
