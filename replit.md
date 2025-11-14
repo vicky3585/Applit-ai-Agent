@@ -59,6 +59,23 @@ Preferred communication style: Simple, everyday language.
 - **Human-readable filenames**: UserListPanel displays `activeFileName` (e.g., "App.tsx") instead of file IDs (UUIDs); IDEContent looks up filename from openTabs and includes it in presence payload
 - **E2E verification**: Tested switching between package.json, App.tsx, and index.tsx; confirmed human-readable filenames display correctly with no UUID patterns visible
 
+✅ **Task 7.10: Follow Mode** - Architect approved (November 14, 2025):
+- Implemented complete follow mode feature enabling users to track another collaborator's view
+- **State management**: `followingUserId` state tracks which user is being followed
+- **Follow activation**: Click user card in UserListPanel to toggle follow mode; prevents self-following with error toast
+- **Auto-follow logic**: useEffect watches followed user's `activeFile` and automatically switches to their current file
+- **Exit mechanisms**: Three ways to exit follow mode:
+  1. ESC key handler with global event listener
+  2. X button in TopBar follow mode badge
+  3. Manual file switch (automatically exits follow mode)
+- **UI indicators**: 
+  - TopBar displays blue badge showing "Following {username}" with inline X button
+  - Followed user's card in UserListPanel highlighted with blue ring (`ring-2 ring-blue-500`)
+  - Toast notifications for all state transitions (enter/exit follow mode)
+- **Edge cases handled**: Gracefully exits follow mode if followed user disconnects; comprehensive user feedback via toast notifications
+- **Wiring**: UserListPanel `onUserClick`, CodeEditor `onTabChange` uses `handleManualTabChange`, TopBar receives `followingUserName` and `onStopFollowing`
+- **Architect review**: Confirmed all state transitions work correctly, auto-follow effect dependencies are correct, UI feedback is appropriate, code follows React best practices
+
 ## System Architecture
 
 ### UI/UX Decisions
