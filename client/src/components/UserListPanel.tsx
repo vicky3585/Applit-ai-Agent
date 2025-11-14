@@ -3,10 +3,10 @@ import { Users, Circle, FileText, WifiOff } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AggregatedCollaborator } from "@/providers/CollaboratorsProvider";
+import { WorkspaceUserPresence } from "@/providers/WorkspaceAwarenessProvider";
 
 interface UserListPanelProps {
-  users: AggregatedCollaborator[];
+  users: WorkspaceUserPresence[];
   currentUserId: string;
   onUserClick?: (userId: string) => void;
 }

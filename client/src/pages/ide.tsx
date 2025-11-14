@@ -20,7 +20,8 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useIDECommands } from "@/hooks/use-ide-commands";
 import { useFilePresence } from "@/hooks/use-file-presence";
-import { useCollaborators } from "@/providers/CollaboratorsProvider";
+import { WorkspaceAwarenessProvider, useWorkspaceAwareness } from "@/providers/WorkspaceAwarenessProvider";
+import { AuthProvider, useAuth } from "@/providers/AuthProvider";
 import UserListPanel from "@/components/UserListPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -56,9 +57,13 @@ function deriveAgentStatus(workflowState: AgentWorkflowState | null): AgentStep 
   return workflowState.current_step;
 }
 
-export default function IDE() {
+function IDEContent() {
   const { toast } = useToast();
+  const { user } = useAuth(); // Get authenticated user
   const [agentStatus, setAgentStatus] = useState<AgentStep>("idle");
+  
+  // Workspace-level awareness (Task 7.9: Single source of truth for presence)
+  const { users: workspaceUsers, setLocalPresence } = useWorkspaceAwareness();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [packagesOpen, setPackagesOpen] = useState(false);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -93,31 +98,6 @@ export default function IDE() {
   
   // File presence state (Task 7.8: Multiplayer presence indicators)
   const { filePresence, handleAwarenessUpdate, clearPresenceForFile } = useFilePresence();
-  
-  // Stable user ID for current user (Task 7.9 fix: must match CodeEditor's userId)
-  const currentUserIdRef = useRef("user1"); // Default matches CodeEditor
-  const currentUsernameRef = useRef("Anonymous"); // Default matches CodeEditor
-  
-  // Collaborators state (Task 7.9: User List Panel)
-  const { state: collaboratorsState, upsertFilePresence, clearFilePresence } = useCollaborators();
-  
-  // Combined awareness handler (Task 7.9: Update both file presence and collaborators registry)
-  const handleCombinedAwarenessUpdate = useCallback((fileId: string, users: any[]) => {
-    // Update file-level presence indicators (Task 7.8)
-    handleAwarenessUpdate(fileId, users);
-    
-    // Update workspace-level collaborators registry (Task 7.9)
-    upsertFilePresence(fileId, users.map(u => ({
-      ...u,
-      connected: true, // Awareness updates mean the user is connected
-    })));
-  }, [handleAwarenessUpdate, upsertFilePresence]);
-  
-  // Combined clear handler
-  const handleCombinedClearPresence = useCallback((fileId: string) => {
-    clearPresenceForFile(fileId);
-    clearFilePresence(fileId);
-  }, [clearPresenceForFile, clearFilePresence]);
 
   // Fetch files
   const { data: files = [] } = useQuery<any[]>({
@@ -187,6 +167,13 @@ export default function IDE() {
       }
     };
   }, [isGenerating, toast]);
+
+  // Task 7.9: Update workspace presence when active tab changes
+  useEffect(() => {
+    if (activeTabId) {
+      setLocalPresence({ activeFile: activeTabId });
+    }
+  }, [activeTabId, setLocalPresence]);
 
   const handleWorkflowCompletion = (status: AgentWorkflowState) => {
     setIsGenerating(false);
@@ -798,9 +785,9 @@ export default function IDE() {
                     onTabChange={setActiveTabId}
                     onTabClose={handleTabClose}
                     onContentChange={handleContentChange}
-                    onAwarenessUpdate={handleCombinedAwarenessUpdate}
-                    userId={currentUserIdRef.current}
-                    username={currentUsernameRef.current}
+                    onAwarenessUpdate={handleAwarenessUpdate}
+                    userId={user.id}
+                    username={user.username}
                   />
                 </div>
               </TabsContent>
@@ -815,7 +802,7 @@ export default function IDE() {
                       onTabChange={setActiveTabId}
                       onTabClose={handleTabClose}
                       onContentChange={handleContentChange}
-                      onAwarenessUpdate={handleCombinedAwarenessUpdate}
+                      onAwarenessUpdate={handleAwarenessUpdate}
                     />
                   </ResizablePanel>
                   <ResizableHandle />
@@ -908,8 +895,8 @@ export default function IDE() {
             </TabsContent>
             <TabsContent value="users" className="flex-1 m-0 overflow-hidden">
               <UserListPanel 
-                users={collaboratorsState.list}
-                currentUserId={currentUserIdRef.current}
+                users={workspaceUsers}
+                currentUserId={user.id}
               />
             </TabsContent>
           </Tabs>
@@ -1066,5 +1053,51 @@ export default function IDE() {
         commands={commands}
       />
     </div>
+  );
+}
+
+/**
+ * IDE with authentication and workspace-level awareness
+ * Task 7.9: Integrates AuthProvider → WorkspaceAwarenessProvider → IDEContent
+ */
+export default function IDE() {
+  return (
+    <AuthProvider>
+      <IDEWithAuth />
+    </AuthProvider>
+  );
+}
+
+/**
+ * IDE component with auth-gated workspace awareness
+ * CRITICAL: Loading guard MUST return before WorkspaceAwarenessProvider is instantiated
+ */
+function IDEWithAuth() {
+  const { user, isLoading } = useAuth();
+  const WORKSPACE_ID = "default-workspace";
+
+  // Block rendering until user is available (either from auth or fallback)
+  // This prevents WorkspaceAwarenessProvider from being instantiated with empty props
+  if (isLoading || !user) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading user identity...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Render IDE with authenticated user (real or fallback)
+  // User is guaranteed non-null here, so WorkspaceAwarenessProvider gets valid props
+  return (
+    <WorkspaceAwarenessProvider
+      workspaceId={WORKSPACE_ID}
+      userId={user.id}
+      username={user.username}
+    >
+      <IDEContent />
+    </WorkspaceAwarenessProvider>
   );
 }

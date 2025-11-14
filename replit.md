@@ -43,6 +43,19 @@ Preferred communication style: Simple, everyday language.
 - Supports multiple users per file with automatic deduplication
 - Proper test IDs for all presence elements
 
+✅ **Task 7.9: User List Panel (Workspace-Level Awareness)** - Architect approved implementation:
+- Created WorkspaceAwarenessProvider with dedicated Y.Doc for workspace-scoped presence tracking
+- Separated workspace-level presence (user list) from per-file awareness (cursor tracking)
+- Single awareness instance per workspace containing: `{ userId, name, color, activeFile, connected, lastUpdate }`
+- Integrated into IDE component: setLocalPresence called on tab changes
+- Connection status tracking via provider.on('status') listener
+- UserListPanel consumes workspace users as single source of truth
+- Proper cleanup: awareness cleared before provider destruction
+- Architecture: Per-file Y.Docs for collaborative editing, workspace Y.Doc for presence only
+- **Critical fixes**: Loading guard returns before WorkspaceAwarenessProvider instantiation (prevents empty identity props); AuthProvider stable fallback user with useRef (prevents ID regeneration); removed hardcoded currentUserIdRef/currentUsernameRef, using useAuth() as single source of truth; removed empty string fallbacks in CodeEditor/UserListPanel (user guaranteed non-null by loading guard)
+- **Auth integration**: `/api/auth/me` endpoint with development fallback; AuthProvider → IDEWithAuth → WorkspaceAwarenessProvider hierarchy with explicit loading gates; all components use useAuth() for consistent identity
+- **Provider lifecycle**: WorkspaceAwarenessProvider effect depends on [workspaceId, userId, username], reinitializes on identity changes; ensures awareness reconnects with correct identity after auth resolves
+
 ## System Architecture
 
 ### UI/UX Decisions

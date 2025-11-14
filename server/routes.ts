@@ -321,6 +321,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // REST API endpoints
+  
+  // Task 7.9: Get current authenticated user
+  // TODO: In production, protect this with auth middleware
+  app.get("/api/auth/me", async (req, res) => {
+    // For now, return a default user (in production, get from session)
+    // This enables multiplayer testing without full auth system
+    res.json({
+      id: "user1",
+      username: "Anonymous",
+      email: null,
+    });
+  });
+
   app.get("/api/workspaces/:id", async (req, res) => {
     const workspace = await storage.getWorkspace(req.params.id);
     if (!workspace) {
