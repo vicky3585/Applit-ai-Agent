@@ -12,6 +12,7 @@ import { templates, getTemplateById } from "./templates";
 import * as github from "./github";
 import * as git from "./git";
 import { initializeYjsProvider } from "./yjs-provider";
+import * as path from "path";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -872,6 +873,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           const result = await response.json();
           
+          // Save generated files to workspace
           if (result.files_generated && result.files_generated.length > 0) {
             for (const file of result.files_generated) {
               await storage.createFile(
@@ -881,6 +883,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 file.language || "plaintext"
               );
             }
+            
+            // 🎯 AUTO PACKAGE INSTALLATION - Phase 1 Feature
+            // Only install packages if files were generated
+            try {
+              const { autoInstallPackages } = await import("./package-installer");
+              const workspaceDir = path.join(process.cwd(), "workspaces", workspaceId);
+              
+              const installResult = await autoInstallPackages(
+                result.files_generated,
+                workspaceDir,
+                (message) => {
+                  // Broadcast progress to clients
+                  wss.clients.forEach((client: any) => {
+                    if (client.readyState === 1 && client.workspaceId === workspaceId) {
+                      client.send(JSON.stringify({
+                        type: "package-install-progress",
+                        data: { message },
+                      }));
+                    }
+                  });
+                }
+              );
+              
+              // Append installation logs to result
+              result.logs = [...(result.logs || []), ...installResult.logs];
+              
+              // Broadcast installation complete
+              if (installResult.success && installResult.packagesInstalled.length > 0) {
+                wss.clients.forEach((client: any) => {
+                  if (client.readyState === 1 && client.workspaceId === workspaceId) {
+                    client.send(JSON.stringify({
+                      type: "packages-installed",
+                      data: { 
+                        packages: installResult.packagesInstalled,
+                        count: installResult.packagesInstalled.length 
+                      },
+                    }));
+                  }
+                });
+              }
+            } catch (installError: any) {
+              console.error("[Package Installer] Error:", installError);
+              result.logs = [...(result.logs || []), `Package installation error: ${installError.message}`];
+            }
+          }
+          
+          // 🎯 AUTO DEV SERVER SPAWN - Phase 1 Feature
+          // Always attempt to start dev server (even on failure, might have existing files)
+          try {
+            const { getDevServerManager } = await import("./dev-server-manager");
+            const devServerManager = getDevServerManager();
+            const workspaceDir = path.join(process.cwd(), "workspaces", workspaceId);
+            
+            result.logs = result.logs || [];
+            result.logs.push("[Auto Dev Server] Detecting project type...");
+            
+            // Start dev server with workspace path (works with existing + new files)
+            const server = await devServerManager.startServer(workspaceId, workspaceDir);
+            
+            if (server) {
+              result.logs.push(`[Auto Dev Server] ✓ Started ${server.type} server on port ${server.port}`);
+              
+              // Broadcast preview URL for auto-refresh
+              wss.clients.forEach((client: any) => {
+                if (client.readyState === 1 && client.workspaceId === workspaceId) {
+                  client.send(JSON.stringify({
+                    type: "preview-refresh",
+                    data: { 
+                      url: server.url,
+                      serverType: server.type,
+                      port: server.port
+                    },
+                  }));
+                }
+              });
+            } else {
+              result.logs.push("[Auto Dev Server] ℹ️ No dev server configuration detected (static files or library)");
+            }
+          } catch (serverError: any) {
+            console.error("[Auto Dev Server] Error:", serverError);
+            result.logs = result.logs || [];
+            result.logs.push(`Dev server error: ${serverError.message}`);
+            // Continue workflow even if server fails to start
           }
 
           // Update execution with result

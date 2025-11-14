@@ -22,6 +22,12 @@ The frontend uses React 18, TypeScript, and Vite, styled with Shadcn/ui (Radix U
 
 **AI Multi-Agent System:** Consists of Planner, Coder, and Tester agents that coordinate to analyze requests, generate, and validate code. It includes an auto-fix loop with error feedback learning and an Orchestrator that manages the Planner→Coder→Tester→Fix workflow, broadcasting real-time state and enhancing error handling. Workflow logs are streamed to the chat panel, and generated files are automatically saved and displayed.
 
+**Phase 1 Autonomous Workflow (NEW):** Fully automated agent workflow similar to Replit Agent:
+- **Auto Package Detection & Installation**: Parses generated JavaScript/TypeScript and Python code for imports, filters built-ins, checks existing packages, and auto-installs missing dependencies via npm/pip with real-time progress broadcasting.
+- **Auto Dev Server Spawning**: After code generation, automatically detects project type (Node.js, Python, Vite, static) and spawns appropriate development server with port allocation and preview URL broadcasting.
+- **Progress Timeline UI**: Visual timeline showing workflow phases (Planning → Coding → Testing → Complete) with animated status indicators, checkmarks for completed steps, spinners for active steps, and X marks for failures.
+- **Error Handling & Retry**: Existing max 3-attempt retry loop with structured error feedback integrated into the autonomous workflow.
+
 **Core IDE Features:**
 - **File Persistence System:** Dual-layer storage (in-memory + disk) with security measures against path traversal.
 - **Hot Reload System:** Uses chokidar for file watching and WebSockets for real-time preview updates.
