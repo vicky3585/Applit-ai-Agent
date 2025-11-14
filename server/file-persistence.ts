@@ -133,6 +133,20 @@ export class FilePersistence {
     console.log(`[FilePersistence] Initialized workspace: ${workspacePath}`);
   }
 
+  /**
+   * Resolve and initialize workspace path (public helper for dev servers)
+   * Ensures workspace directory exists and returns the correct filesystem path
+   */
+  async resolveWorkspacePath(workspaceId: string): Promise<string | null> {
+    if (!this.enableSync) {
+      return null; // File sync disabled
+    }
+
+    // Ensure workspace is initialized
+    await this.initializeWorkspace(workspaceId);
+    return this.getWorkspacePath(workspaceId);
+  }
+
   private getWorkspacePath(workspaceId: string): string {
     return path.join(this.workspaceRoot, workspaceId);
   }

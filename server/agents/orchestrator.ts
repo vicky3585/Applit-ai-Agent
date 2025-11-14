@@ -125,26 +125,25 @@ export class AgentOrchestrator {
             try {
               const { getDevServerManager } = await import("../dev-server-manager");
               const { getFilePersistence } = await import("../file-persistence");
-              const { ENV_CONFIG } = await import("@shared/environment");
-              const path = await import("path");
               
               const manager = getDevServerManager();
               const persistence = getFilePersistence();
               
-              // Construct workspace path
-              let workspaceRoot = ENV_CONFIG.env === "local" 
-                ? "/tmp/ide-workspaces"
-                : process.env.TMPDIR || "/tmp/ide-workspaces";
-              const workspacePath = path.join(workspaceRoot, context.workspaceId);
+              // Get workspace path using FilePersistence helper (ensures directory exists)
+              const workspacePath = await persistence.resolveWorkspacePath(context.workspaceId);
               
-              // Try to start dev server (non-blocking, don't fail if it doesn't work)
-              state.logs.push("[Orchestrator] Starting dev server...");
-              const server = await manager.startServer(context.workspaceId, workspacePath);
-              
-              if (server) {
-                state.logs.push(`[Orchestrator] Dev server running on port ${server.port} (${server.type})`);
+              if (!workspacePath) {
+                state.logs.push("[Orchestrator] File persistence disabled - skipping dev server start");
               } else {
-                state.logs.push("[Orchestrator] No dev server configured (static files can still be previewed)");
+                // Try to start dev server (non-blocking, don't fail if it doesn't work)
+                state.logs.push("[Orchestrator] Starting dev server...");
+                const server = await manager.startServer(context.workspaceId, workspacePath);
+                
+                if (server) {
+                  state.logs.push(`[Orchestrator] Dev server running on port ${server.port} (${server.type})`);
+                } else {
+                  state.logs.push("[Orchestrator] No dev server configured (static files can still be previewed)");
+                }
               }
             } catch (error: any) {
               // Non-fatal error - just log it

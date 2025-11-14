@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { Router } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { createProxyMiddleware } from "http-proxy-middleware";
@@ -415,15 +416,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get("/api/workspaces/:id/preview-url", async (req, res) => {
+    // Task 5: Detect Dev Server and Route Preview Automatically
     // Return the preview URL for the workspace
-    // Check if there's an HTML file to preview
     const workspaceId = req.params.id;
-    const files = await storage.getFilesByWorkspace(workspaceId);
-    
-    // Look for HTML files
-    const htmlFiles = files.filter(f => 
-      f.path.endsWith('.html') || f.path.endsWith('.htm')
-    );
     
     // Force HTTPS when X-Forwarded-Proto is https or when host contains replit.dev
     const host = req.get('host') || '';
@@ -432,23 +427,95 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const protocol = isSecure ? 'https' : req.protocol;
     const baseUrl = `${protocol}://${host}`;
     
+    // STEP 1: Check if dev server is running (highest priority)
+    try {
+      const { getDevServerManager } = await import("./dev-server-manager");
+      const manager = getDevServerManager();
+      const devServer = manager.getServer(workspaceId);
+      
+      if (devServer && devServer.url) {
+        // Dev server is running - use proxy URL
+        const proxyUrl = `${baseUrl}/preview/${workspaceId}/`;
+        console.log(`[Preview URL] Dev server detected (${devServer.type}), returning proxy URL: ${proxyUrl}`);
+        return res.json({ 
+          url: proxyUrl,
+          hasDevServer: true,
+          devServerType: devServer.type,
+          devServerPort: devServer.port,
+        });
+      }
+    } catch (error: any) {
+      console.log(`[Preview URL] Dev server check failed:`, error.message);
+    }
+    
+    // STEP 2: Fall back to HTML file detection (original behavior)
+    const files = await storage.getFilesByWorkspace(workspaceId);
+    
+    // Look for HTML files
+    const htmlFiles = files.filter(f => 
+      f.path.endsWith('.html') || f.path.endsWith('.htm')
+    );
+    
     // If there are HTML files, suggest the first one
     if (htmlFiles.length > 0) {
       const firstHtml = htmlFiles[0];
       res.json({ 
         url: `${baseUrl}/preview/${workspaceId}/${firstHtml.path}`,
         hasHtmlFiles: true,
+        hasDevServer: false,
         htmlFiles: htmlFiles.map(f => ({
           path: f.path,
           url: `${baseUrl}/preview/${workspaceId}/${f.path}`
         }))
       });
     } else {
-      res.json({ url: baseUrl, hasHtmlFiles: false });
+      res.json({ 
+        url: baseUrl, 
+        hasHtmlFiles: false,
+        hasDevServer: false,
+      });
     }
   });
 
-  // Serve workspace files for preview (HTML, CSS, JS, etc.)
+  // Task 4: Dev Server Proxy - Only proxy when dev server exists
+  // Fix 2: Only create and invoke proxy when dev server is running
+  app.use("/preview/:workspaceId", async (req: any, res: any, next: any) => {
+    try {
+      const workspaceId = req.params.workspaceId;
+      const { getDevServerManager } = await import("./dev-server-manager");
+      const manager = getDevServerManager();
+      const devServer = manager.getServer(workspaceId);
+      
+      // If no dev server, skip to static file handler
+      if (!devServer || !devServer.url) {
+        return next();
+      }
+      
+      // Dev server exists - create proxy and invoke it (this terminates the request)
+      const proxy = createProxyMiddleware({
+        target: devServer.url,
+        changeOrigin: true,
+        ws: true, // WebSocket support for HMR
+        pathRewrite: (path) => {
+          // Remove /preview/:workspaceId prefix, ensure we always return at least '/'
+          const rewritten = path.replace(`/preview/${workspaceId}`, '') || '/';
+          return rewritten;
+        },
+        onError: (err, _req, _res) => {
+          console.error('[Preview Proxy] Error:', err.message);
+        },
+      });
+      
+      // Invoke proxy - execution stops here
+      proxy(req, res, next);
+    } catch (error: any) {
+      console.error('[Preview Guard] Error:', error.message);
+      // On error, continue to static file handler
+      next();
+    }
+  });
+
+  // Serve workspace files for preview (HTML, CSS, JS, etc.) - FALLBACK
   app.get("/preview/:workspaceId/*", async (req, res) => {
     try {
       const workspaceId = req.params.workspaceId;
@@ -1338,13 +1405,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           console.log(`[Templates] Synced ${createdFiles.length} files to disk`);
           
-          // Construct workspace path (matches FilePersistence pattern)
-          const { ENV_CONFIG: envConfig } = await import("@shared/environment");
-          const path = await import("path");
-          let workspaceRoot = envConfig.env === "local" 
-            ? "/tmp/ide-workspaces"
-            : process.env.TMPDIR || "/tmp/ide-workspaces";
-          const workspacePath = path.join(workspaceRoot, workspaceId);
+          // Get workspace path using FilePersistence helper (ensures directory exists)
+          const workspacePath = await persistence.resolveWorkspacePath(workspaceId);
+          
+          if (!workspacePath) {
+            throw new Error("File persistence is disabled - cannot start dev server");
+          }
           
           // Start dev server
           broadcastProgress("Starting dev server...");
