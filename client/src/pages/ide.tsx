@@ -99,6 +99,9 @@ function IDEContent() {
   // File presence state (Task 7.8: Multiplayer presence indicators)
   const { filePresence, handleAwarenessUpdate, clearPresenceForFile } = useFilePresence();
 
+  // Follow mode state (Task 7.10: Follow user's view and cursor)
+  const [followingUserId, setFollowingUserId] = useState<string | null>(null);
+
   // Fetch files
   const { data: files = [] } = useQuery<any[]>({
     queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`],
@@ -650,6 +653,75 @@ function IDEContent() {
     }
   };
 
+  // Task 7.10: Follow mode controller
+  const handleUserClick = (userId: string) => {
+    // Can't follow yourself
+    if (userId === user.id) {
+      toast({
+        title: "Cannot follow yourself",
+        description: "Select another collaborator to follow their view",
+      });
+      return;
+    }
+
+    // Toggle follow mode
+    const isCurrentlyFollowing = followingUserId === userId;
+    setFollowingUserId(isCurrentlyFollowing ? null : userId);
+
+    const followedUser = workspaceUsers.find(u => u.userId === userId);
+    const userName = followedUser?.name || "User";
+
+    toast({
+      title: isCurrentlyFollowing ? "Stopped following" : `Following ${userName}`,
+      description: isCurrentlyFollowing 
+        ? "You are now viewing your own files" 
+        : `You will automatically switch to files ${userName} is viewing`,
+    });
+  };
+
+  // Task 7.10: Auto-switch files when followed user changes files
+  useEffect(() => {
+    if (!followingUserId) return;
+
+    const followedUser = workspaceUsers.find(u => u.userId === followingUserId);
+    
+    // Exit follow mode if user disconnected
+    if (!followedUser || !followedUser.connected) {
+      setFollowingUserId(null);
+      toast({
+        title: "Stopped following",
+        description: "The user you were following has disconnected",
+      });
+      return;
+    }
+
+    // Auto-open the file the followed user is viewing
+    if (followedUser.activeFile && followedUser.activeFile !== activeTabId) {
+      const file = files.find((f: any) => f.id === followedUser.activeFile);
+      if (file) {
+        handleFileSelect(file);
+        addLog("info", `Following ${followedUser.name} - switched to ${followedUser.activeFileName || file.path}`);
+      }
+    }
+  }, [followingUserId, workspaceUsers, files]);
+
+  // Task 7.10: Exit follow mode on manual file switch
+  const handleManualTabChange = (tabId: string | null) => {
+    setActiveTabId(tabId);
+    
+    // Exit follow mode if user manually switched files
+    if (followingUserId && tabId) {
+      const followedUser = workspaceUsers.find(u => u.userId === followingUserId);
+      if (followedUser && tabId !== followedUser.activeFile) {
+        setFollowingUserId(null);
+        toast({
+          title: "Stopped following",
+          description: "Follow mode exited (manual file switch)",
+        });
+      }
+    }
+  };
+
   // Build file tree
   const buildFileTree = (files: any[]): FileNode[] => {
     const tree: FileNode[] = [];
@@ -787,7 +859,7 @@ function IDEContent() {
                   <CodeEditor
                     tabs={openTabs}
                     activeTabId={activeTabId || undefined}
-                    onTabChange={setActiveTabId}
+                    onTabChange={handleManualTabChange}
                     onTabClose={handleTabClose}
                     onContentChange={handleContentChange}
                     onAwarenessUpdate={handleAwarenessUpdate}
@@ -804,7 +876,7 @@ function IDEContent() {
                     <CodeEditor
                       tabs={openTabs}
                       activeTabId={activeTabId || undefined}
-                      onTabChange={setActiveTabId}
+                      onTabChange={handleManualTabChange}
                       onTabClose={handleTabClose}
                       onContentChange={handleContentChange}
                       onAwarenessUpdate={handleAwarenessUpdate}
@@ -902,6 +974,7 @@ function IDEContent() {
               <UserListPanel 
                 users={workspaceUsers}
                 currentUserId={user.id}
+                onUserClick={handleUserClick}
               />
             </TabsContent>
           </Tabs>
