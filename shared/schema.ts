@@ -64,7 +64,8 @@ export const agentExecutions = pgTable("agent_executions", {
   progress: real("progress").notNull().default(0.0), // 0.0 to 1.0
   attempt_count: real("attempt_count").notNull().default(0), // Current retry attempt number
   last_failed_step: text("last_failed_step"), // Last step that failed, persists through retries
-  logs: jsonb("logs").notNull().default(sql`'[]'::jsonb`), // Array of log messages
+  logs: jsonb("logs").notNull().default(sql`'[]'::jsonb`), // Legacy: Array of string log messages
+  structuredLogs: jsonb("structured_logs").default(sql`'[]'::jsonb`), // Phase 2: Array of LogEntry objects with metadata
   files_generated: jsonb("files_generated").notNull().default(sql`'[]'::jsonb`), // Array of {path, content, language}
   errors: jsonb("errors").notNull().default(sql`'[]'::jsonb`), // Array of error messages
   createdAt: timestamp("created_at").defaultNow(),
@@ -299,11 +300,46 @@ export interface AgentFileGenerated {
   language?: string;
 }
 
+// Phase 2: Structured Logging System
+export const logLevelSchema = z.enum(["info", "warn", "error", "success", "debug"]);
+export const logPhaseSchema = z.enum([
+  "system",
+  "planning",
+  "coding",
+  "testing",
+  "fixing",
+  "package_install",
+  "dev_server",
+  "complete"
+]);
+
+export type LogLevel = z.infer<typeof logLevelSchema>;
+export type LogPhase = z.infer<typeof logPhaseSchema>;
+
+export interface LogEntry {
+  id: string;
+  timestamp: number; // Unix timestamp in milliseconds
+  level: LogLevel;
+  phase: LogPhase;
+  message: string;
+  metadata?: Record<string, any>; // Additional context (retry attempt, package name, etc.)
+}
+
+export const logEntrySchema = z.object({
+  id: z.string(),
+  timestamp: z.number(),
+  level: logLevelSchema,
+  phase: logPhaseSchema,
+  message: z.string(),
+  metadata: z.record(z.any()).optional(),
+});
+
 export interface AgentWorkflowState {
   status: "idle" | "processing" | "complete" | "failed";
   current_step: AgentStep;
   progress: number; // 0.0 to 1.0
-  logs: string[];
+  logs: string[]; // Legacy string logs (backward compatible)
+  structuredLogs?: LogEntry[]; // Phase 2: Structured logs with metadata
   files_generated: AgentFileGenerated[];
   errors: string[];
   attempt_count?: number;

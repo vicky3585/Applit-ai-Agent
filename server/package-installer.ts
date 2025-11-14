@@ -1,12 +1,15 @@
 /**
  * Auto Package Installer
  * Detects imports in generated code and automatically installs packages
+ * Phase 2: Enhanced with structured logging
  */
 
 import { exec } from "child_process";
 import { promisify } from "util";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { StructuredLogger } from "./logger";
+import type { LogEntry } from "@shared/schema";
 
 const execAsync = promisify(exec);
 
@@ -14,7 +17,8 @@ export interface PackageInstallResult {
   success: boolean;
   packagesInstalled: string[];
   errors: string[];
-  logs: string[];
+  logs: string[]; // Legacy logs (deprecated)
+  structuredLogs: LogEntry[]; // Phase 2: Structured logs
 }
 
 export interface DetectedPackage {
@@ -203,6 +207,7 @@ export async function installPackages(
     packagesInstalled: [],
     errors: [],
     logs: [],
+    structuredLogs: [],
   };
   
   // Group packages by type
@@ -211,8 +216,13 @@ export async function installPackages(
   
   // Install npm packages
   if (npmPackages.length > 0) {
+    const message = `Detected npm packages: ${npmPackages.join(", ")}`;
     onProgress?.(`📦 Detecting npm packages to install: ${npmPackages.join(", ")}`);
-    result.logs.push(`Detected npm packages: ${npmPackages.join(", ")}`);
+    result.logs.push(message);
+    result.structuredLogs.push(StructuredLogger.info("package_install", message, {
+      packageManager: "npm",
+      packages: npmPackages,
+    }));
     
     // Filter already installed
     const toInstall: string[] = [];
@@ -221,7 +231,13 @@ export async function installPackages(
       if (!installed) {
         toInstall.push(pkg);
       } else {
-        result.logs.push(`✓ ${pkg} already installed`);
+        const alreadyMsg = `${pkg} already installed`;
+        result.logs.push(`✓ ${alreadyMsg}`);
+        result.structuredLogs.push(StructuredLogger.info("package_install", alreadyMsg, {
+          packageName: pkg,
+          packageManager: "npm",
+          status: "already_installed",
+        }));
       }
     }
     
@@ -235,29 +251,58 @@ export async function installPackages(
         );
         
         result.packagesInstalled.push(...toInstall);
-        result.logs.push(`✓ Successfully installed: ${toInstall.join(", ")}`);
-        result.logs.push(stdout);
+        const successMsg = `Successfully installed: ${toInstall.join(", ")}`;
+        result.logs.push(`✓ ${successMsg}`);
+        result.structuredLogs.push(StructuredLogger.success("package_install", successMsg, {
+          packageManager: "npm",
+          packages: toInstall,
+          count: toInstall.length,
+        }));
+        
+        if (stdout.trim()) {
+          result.logs.push(stdout);
+        }
         
         if (stderr) {
+          const warnMsg = `npm warnings during installation`;
           result.logs.push(`Warnings: ${stderr}`);
+          result.structuredLogs.push(StructuredLogger.warn("package_install", warnMsg, {
+            packageManager: "npm",
+            stderr,
+          }));
         }
         
         onProgress?.(`✅ Installed ${toInstall.length} npm package(s)`);
       } catch (error: any) {
         result.success = false;
-        result.errors.push(`Failed to install npm packages: ${error.message}`);
+        const errorMsg = `Failed to install npm packages: ${error.message}`;
+        result.errors.push(errorMsg);
         result.logs.push(`✗ Error: ${error.message}`);
-        onProgress?.(`❌ Failed to install npm packages: ${error.message}`);
+        result.structuredLogs.push(StructuredLogger.error("package_install", errorMsg, {
+          packageManager: "npm",
+          packages: toInstall,
+          error: error.message,
+        }));
+        onProgress?.(`❌ ${errorMsg}`);
       }
     } else {
-      onProgress?.(`✅ All npm packages already installed`);
+      const alreadyMsg = "All npm packages already installed";
+      onProgress?.(`✅ ${alreadyMsg}`);
+      result.structuredLogs.push(StructuredLogger.info("package_install", alreadyMsg, {
+        packageManager: "npm",
+      }));
     }
   }
   
   // Install pip packages
   if (pipPackages.length > 0) {
+    const message = `Detected pip packages: ${pipPackages.join(", ")}`;
     onProgress?.(`📦 Detecting pip packages to install: ${pipPackages.join(", ")}`);
-    result.logs.push(`Detected pip packages: ${pipPackages.join(", ")}`);
+    result.logs.push(message);
+    result.structuredLogs.push(StructuredLogger.info("package_install", message, {
+      packageManager: "pip",
+      packages: pipPackages,
+    }));
     
     const toInstall: string[] = [];
     for (const pkg of pipPackages) {
@@ -265,7 +310,13 @@ export async function installPackages(
       if (!installed) {
         toInstall.push(pkg);
       } else {
-        result.logs.push(`✓ ${pkg} already installed`);
+        const alreadyMsg = `${pkg} already installed`;
+        result.logs.push(`✓ ${alreadyMsg}`);
+        result.structuredLogs.push(StructuredLogger.info("package_install", alreadyMsg, {
+          packageName: pkg,
+          packageManager: "pip",
+          status: "already_installed",
+        }));
       }
     }
     
@@ -279,22 +330,46 @@ export async function installPackages(
         );
         
         result.packagesInstalled.push(...toInstall);
-        result.logs.push(`✓ Successfully installed: ${toInstall.join(", ")}`);
-        result.logs.push(stdout);
+        const successMsg = `Successfully installed: ${toInstall.join(", ")}`;
+        result.logs.push(`✓ ${successMsg}`);
+        result.structuredLogs.push(StructuredLogger.success("package_install", successMsg, {
+          packageManager: "pip",
+          packages: toInstall,
+          count: toInstall.length,
+        }));
+        
+        if (stdout.trim()) {
+          result.logs.push(stdout);
+        }
         
         if (stderr) {
+          const warnMsg = `pip warnings during installation`;
           result.logs.push(`Warnings: ${stderr}`);
+          result.structuredLogs.push(StructuredLogger.warn("package_install", warnMsg, {
+            packageManager: "pip",
+            stderr,
+          }));
         }
         
         onProgress?.(`✅ Installed ${toInstall.length} pip package(s)`);
       } catch (error: any) {
         result.success = false;
-        result.errors.push(`Failed to install pip packages: ${error.message}`);
+        const errorMsg = `Failed to install pip packages: ${error.message}`;
+        result.errors.push(errorMsg);
         result.logs.push(`✗ Error: ${error.message}`);
-        onProgress?.(`❌ Failed to install pip packages: ${error.message}`);
+        result.structuredLogs.push(StructuredLogger.error("package_install", errorMsg, {
+          packageManager: "pip",
+          packages: toInstall,
+          error: error.message,
+        }));
+        onProgress?.(`❌ ${errorMsg}`);
       }
     } else {
-      onProgress?.(`✅ All pip packages already installed`);
+      const alreadyMsg = "All pip packages already installed";
+      onProgress?.(`✅ ${alreadyMsg}`);
+      result.structuredLogs.push(StructuredLogger.info("package_install", alreadyMsg, {
+        packageManager: "pip",
+      }));
     }
   }
   
@@ -316,11 +391,13 @@ export async function autoInstallPackages(
   
   if (detectedPackages.length === 0) {
     onProgress?.("ℹ️ No external packages detected");
+    const log = StructuredLogger.info("package_install", "No external packages detected");
     return {
       success: true,
       packagesInstalled: [],
       errors: [],
       logs: ["No external packages detected"],
+      structuredLogs: [log],
     };
   }
   
