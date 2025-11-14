@@ -101,17 +101,39 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
   // Follow mode state (Task 7.10: Follow user's view and cursor)
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
 
-  // Fetch files
-  const { data: files = [] } = useQuery<any[]>({
+  // Fetch files (with error handling for deleted workspaces)
+  const { data: files = [], error: filesError } = useQuery<any[]>({
     queryKey: [`/api/workspaces/${workspaceId}/files`],
+    retry: false, // Don't retry on 404s
+    refetchOnWindowFocus: true,
+    staleTime: 30000,
   });
+
+  // Redirect to dashboard if workspace doesn't exist (404)
+  const [, navigate] = useLocation();
+  useEffect(() => {
+    if (filesError) {
+      // Check HTTP status instead of error message substring
+      const status = (filesError as any)?.response?.status || (filesError as any)?.status;
+      if (status === 404) {
+        toast({
+          title: "Workspace not found",
+          description: "This workspace may have been deleted. Redirecting to dashboard...",
+          variant: "destructive",
+        });
+        setTimeout(() => {
+          navigate("/dashboard");
+        }, 1500);
+      }
+    }
+  }, [filesError, toast, navigate]);
 
   // Fetch chat messages
   useEffect(() => {
     fetch(`/api/workspaces/${workspaceId}/chat`)
       .then((res) => res.json())
       .then((messages) => setChatMessages(messages));
-  }, []);
+  }, [workspaceId]);
 
   // Poll agent status when generating
   useEffect(() => {

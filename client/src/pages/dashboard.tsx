@@ -26,9 +26,11 @@ export default function Dashboard() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [workspaceToDelete, setWorkspaceToDelete] = useState<Workspace | null>(null);
 
-  // Fetch workspaces
+  // Fetch workspaces (with aggressive refetching to detect deletions)
   const { data: workspaces = [], isLoading } = useQuery<Workspace[]>({
     queryKey: ["/api/workspaces"],
+    refetchOnWindowFocus: true,
+    staleTime: 30000, // Consider data stale after 30 seconds
   });
 
   // Create workspace mutation

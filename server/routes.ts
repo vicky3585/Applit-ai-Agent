@@ -29,9 +29,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   
   // Store active WebSocket connections by workspace ID
   const connections = new Map<string, Set<WebSocket>>();
+  
+  // Store active WebSocket connections by user ID (for secure per-user events)
+  const userWebSocketConnections = new Map<string, Set<WebSocket>>();
 
-  wss.on("connection", (ws: WebSocket & { workspaceId?: string }) => {
+  wss.on("connection", (ws: WebSocket & { workspaceId?: string; userId?: string }) => {
     let workspaceId: string | null = null;
+    let userId: string | null = null;
     let hasJoined = false;
 
     // Set timeout to close connection if client doesn't join within 10 seconds
@@ -48,15 +52,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (data.type === "join" && typeof data.workspaceId === "string") {
           const wsId = data.workspaceId;
+          const uid = data.userId || "user1"; // Default to user1 for now (TODO: extract from auth session)
+          
+          // SECURITY: Validate workspace ownership before allowing join
+          const workspace = await storage.getWorkspace(wsId);
+          if (!workspace) {
+            console.warn(`[WebSocket] Workspace ${wsId} not found, rejecting join`);
+            ws.close();
+            return;
+          }
+          
+          if (workspace.userId !== uid) {
+            console.warn(`[WebSocket] User ${uid} attempted to join workspace ${wsId} owned by ${workspace.userId}, rejecting`);
+            ws.close();
+            return;
+          }
+          
           workspaceId = wsId;
-          ws.workspaceId = wsId; // Store workspace ID on client for filtering
+          userId = uid;
+          ws.workspaceId = wsId;
+          ws.userId = uid;
           hasJoined = true;
           clearTimeout(joinTimeout);
           
+          // Track by workspaceId
           if (!connections.has(wsId)) {
             connections.set(wsId, new Set());
           }
           connections.get(wsId)!.add(ws);
+          
+          // Track by userId (for secure workspace events)
+          if (!userWebSocketConnections.has(uid)) {
+            userWebSocketConnections.set(uid, new Set());
+          }
+          userWebSocketConnections.get(uid)!.add(ws);
+          
+          console.log(`[WebSocket] User ${uid} joined workspace ${wsId}`);
           
           // Send current state
           const execution = await storage.getAgentExecution(wsId);
@@ -155,9 +186,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     ws.on("close", () => {
       clearTimeout(joinTimeout);
+      
+      // Clean up workspace connections
       if (workspaceId && connections.has(workspaceId)) {
         connections.get(workspaceId)!.delete(ws);
       }
+      
+      // Clean up user connections
+      if (userId && userWebSocketConnections.has(userId)) {
+        userWebSocketConnections.get(userId)!.delete(ws);
+      }
+      
+      console.log(`[WebSocket] User ${userId} disconnected from workspace ${workspaceId}`);
     });
   });
 
@@ -292,6 +332,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   }
 
+  // Broadcast to specific user's connections only (secure per-user events)
+  function broadcastToUser(userId: string, message: any) {
+    const userConnections = userWebSocketConnections.get(userId);
+    userConnections?.forEach((client) => {
+      if (client.readyState === 1) {
+        client.send(JSON.stringify(message));
+      }
+    });
+  }
+
   // Health check endpoint
   app.get("/api/health", async (req, res) => {
     const dockerAvailable = await validateDockerAccess();
@@ -397,6 +447,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       await storage.deleteWorkspace(workspaceId);
       console.log(`[Workspaces] Deleted workspace: ${workspaceId} (${workspace.name})`);
+      
+      // Broadcast workspace deletion event ONLY to workspace owner
+      broadcastToUser(workspace.userId, {
+        type: "workspace.deleted",
+        payload: { workspaceId, workspaceName: workspace.name },
+      });
       
       res.json({ success: true, message: "Workspace deleted successfully" });
     } catch (error: any) {

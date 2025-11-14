@@ -2,7 +2,7 @@ import { Code2, Play, Pause, RotateCcw, Settings, Moon, Sun, Package, Sparkles, 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { AgentStep } from "@shared/schema";
@@ -46,10 +46,23 @@ export default function TopBar({
   const [darkMode, setDarkMode] = useState(false);
   const [, navigate] = useLocation();
 
-  // Fetch all workspaces for the switcher
+  // Fetch all workspaces for the switcher (with aggressive refetching)
   const { data: workspaces = [] } = useQuery<Workspace[]>({
     queryKey: ["/api/workspaces"],
+    refetchOnWindowFocus: true,
+    staleTime: 30000, // Consider data stale after 30 seconds
   });
+
+  // Detect when current workspace is deleted and redirect to dashboard
+  useEffect(() => {
+    if (workspaceId && workspaces.length > 0) {
+      const currentWorkspaceExists = workspaces.some(w => w.id === workspaceId);
+      if (!currentWorkspaceExists) {
+        // Current workspace was deleted, redirect to dashboard
+        navigate("/dashboard");
+      }
+    }
+  }, [workspaceId, workspaces, navigate]);
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
