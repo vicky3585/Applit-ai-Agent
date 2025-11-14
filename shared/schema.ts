@@ -63,6 +63,7 @@ export const agentExecutions = pgTable("agent_executions", {
   current_step: text("current_step").notNull(), // 'idle' | 'planning' | 'coding' | 'testing' | 'fixing' | 'complete'
   progress: real("progress").notNull().default(0.0), // 0.0 to 1.0
   attempt_count: real("attempt_count").notNull().default(0), // Current retry attempt number
+  last_failed_step: text("last_failed_step"), // Last step that failed, persists through retries
   logs: jsonb("logs").notNull().default(sql`'[]'::jsonb`), // Array of log messages
   files_generated: jsonb("files_generated").notNull().default(sql`'[]'::jsonb`), // Array of {path, content, language}
   errors: jsonb("errors").notNull().default(sql`'[]'::jsonb`), // Array of error messages
@@ -306,4 +307,5 @@ export interface AgentWorkflowState {
   files_generated: AgentFileGenerated[];
   errors: string[];
   attempt_count?: number;
+  last_failed_step?: string | null; // Persisted failure indicator
 }

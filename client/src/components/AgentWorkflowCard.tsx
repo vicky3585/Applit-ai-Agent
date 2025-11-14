@@ -36,7 +36,7 @@ export default function AgentWorkflowCard({ workflowState, onFileClick }: AgentW
   const [logsExpanded, setLogsExpanded] = useState(true);
   const [errorsExpanded, setErrorsExpanded] = useState(true);
 
-  const { status, current_step, progress, logs, files_generated, errors, attempt_count } = workflowState;
+  const { status, current_step, progress, logs, files_generated, errors, attempt_count, last_failed_step } = workflowState;
 
   const isProcessing = status === "processing";
   const isComplete = status === "complete";
@@ -48,27 +48,39 @@ export default function AgentWorkflowCard({ workflowState, onFileClick }: AgentW
   // Define workflow steps in order (only show main workflow steps in timeline)
   const workflowSteps: AgentStep[] = ["planning", "coding", "testing", "complete"];
   
+  // Normalize errors to strings safely
+  const normalizeErrors = (errs: any[]): string[] => {
+    return errs.map(err => {
+      if (typeof err === "string") return err;
+      if (typeof err === "object" && err !== null) {
+        if ("message" in err) return String(err.message);
+        return JSON.stringify(err);
+      }
+      return String(err);
+    });
+  };
+  
+  // Check if this execution ever failed (uses durable last_failed_step indicator)
+  const hasEverFailed = status === "failed" || last_failed_step !== null && last_failed_step !== undefined;
+  
   // Determine which timeline step corresponds to failure
   const getFailedTimelineStep = (): AgentStep => {
-    // Use logs to determine where failure occurred
-    const logText = logs.join(" ").toLowerCase();
-    
-    if (logText.includes("[tester") || logText.includes("testing") || current_step === "fixing") {
-      return "testing";
-    }
-    if (logText.includes("[coder") || logText.includes("coding")) {
-      return "coding";
-    }
-    if (logText.includes("[planner") || logText.includes("planning")) {
-      return "planning";
+    // Priority 1: Use persisted last_failed_step (most reliable, survives retries)
+    if (last_failed_step && ["planning", "coding", "testing"].includes(last_failed_step)) {
+      return last_failed_step as AgentStep;
     }
     
-    // Default to last known step if we can't determine from logs
+    // Priority 2: Use current_step if it's a valid timeline step
     if (current_step === "planning" || current_step === "coding" || current_step === "testing") {
       return current_step;
     }
     
-    // Fallback to planning if unknown
+    // Priority 3: Map special states to timeline steps
+    if (current_step === "fixing") {
+      return "testing"; // Fixing happens after testing fails
+    }
+    
+    // Fallback: Assume planning if we can't determine
     return "planning";
   };
   
@@ -79,8 +91,8 @@ export default function AgentWorkflowCard({ workflowState, onFileClick }: AgentW
       return "completed";
     }
     
-    // Handle failed state
-    if (isFailed) {
+    // Handle failed state (including idle after failure)
+    if (isFailed || (status === "idle" && hasEverFailed)) {
       const failedStep = getFailedTimelineStep();
       const failedIndex = workflowSteps.indexOf(failedStep);
       const stepIndex = workflowSteps.indexOf(step);
@@ -110,7 +122,7 @@ export default function AgentWorkflowCard({ workflowState, onFileClick }: AgentW
       return "pending";
     }
     
-    // Default: all pending
+    // Default: all pending (fresh idle with no history)
     return "pending";
   };
 
@@ -217,7 +229,7 @@ export default function AgentWorkflowCard({ workflowState, onFileClick }: AgentW
           <CollapsibleContent className="mt-2">
             <ScrollArea className="max-h-24 rounded-md border bg-destructive/5 p-2">
               <div className="space-y-1 text-xs font-mono text-destructive">
-                {errors.map((error, idx) => (
+                {normalizeErrors(errors).map((error, idx) => (
                   <div key={idx} data-testid={`error-entry-${idx}`}>
                     {error}
                   </div>

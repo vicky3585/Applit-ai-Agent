@@ -873,6 +873,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           const result = await response.json();
           
+          // Initialize result fields defensively
+          result.logs = result.logs || [];
+          result.files_generated = result.files_generated || [];
+          result.errors = result.errors || [];
+          
           // Save generated files to workspace
           if (result.files_generated && result.files_generated.length > 0) {
             for (const file of result.files_generated) {
@@ -969,15 +974,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Update execution with result
-          await storage.createOrUpdateAgentExecution(workspaceId, {
+          // IMPORTANT: Manage failure state persistence
+          const finalStatus = result.status || "complete";
+          const isFailed = finalStatus === "failed";
+          const finalErrors = isFailed ? (result.errors || []) : [];
+          
+          // Fetch previous execution to preserve last_failed_step during processing
+          const previousExecution = await storage.getAgentExecution(workspaceId);
+          
+          // Determine last_failed_step
+          let lastFailedStep: string | null | undefined = undefined;
+          if (isFailed) {
+            // Capture which step failed for timeline persistence
+            const currentStep = result.current_step || "planning";
+            if (currentStep === "fixing") {
+              lastFailedStep = "testing"; // Fixing happens after testing fails
+            } else if (["planning", "coding", "testing"].includes(currentStep)) {
+              lastFailedStep = currentStep;
+            } else {
+              lastFailedStep = "planning"; // Fallback
+            }
+          } else if (finalStatus === "complete") {
+            // Clear failure state on successful completion
+            lastFailedStep = null;
+          } else {
+            // For processing/idle states, preserve existing last_failed_step from DB
+            lastFailedStep = previousExecution?.last_failed_step ?? null;
+          }
+          
+          const executionUpdate: any = {
             prompt,
-            status: result.status || "complete",
-            current_step: "complete",
-            progress: 1.0,
+            status: finalStatus,
+            current_step: result.current_step || finalStatus, // Use orchestrator's step
+            progress: result.progress ?? (finalStatus === "complete" ? 1.0 : (previousExecution?.progress ?? 0)),
             logs: result.logs || [],
             files_generated: result.files_generated || [],
-            errors: result.errors || [],
-          });
+            errors: finalErrors,
+            last_failed_step: lastFailedStep,
+          };
+          
+          await storage.createOrUpdateAgentExecution(workspaceId, executionUpdate);
           
           return;
         } catch (error: any) {

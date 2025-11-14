@@ -68,6 +68,7 @@ export interface IStorage {
       current_step: string;
       progress: number;
       attempt_count?: number;
+      last_failed_step?: string | null;
       logs: any[];
       files_generated: any[];
       errors: any[];
@@ -462,6 +463,7 @@ export class MemStorage implements IStorage {
       current_step: string;
       progress: number;
       attempt_count?: number;
+      last_failed_step?: string | null;
       logs: any[];
       files_generated: any[];
       errors: any[];
@@ -475,6 +477,7 @@ export class MemStorage implements IStorage {
       existing.current_step = data.current_step;
       existing.progress = data.progress;
       existing.attempt_count = data.attempt_count !== undefined ? data.attempt_count : (existing.attempt_count || 0);
+      existing.last_failed_step = data.last_failed_step !== undefined ? data.last_failed_step : existing.last_failed_step;
       existing.logs = data.logs;
       existing.files_generated = data.files_generated;
       existing.errors = data.errors;
@@ -492,6 +495,7 @@ export class MemStorage implements IStorage {
       current_step: data.current_step,
       progress: data.progress,
       attempt_count: data.attempt_count || 0,
+      last_failed_step: data.last_failed_step ?? null,
       logs: data.logs,
       files_generated: data.files_generated,
       errors: data.errors,

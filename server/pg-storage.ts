@@ -404,31 +404,56 @@ export class PostgresStorage implements IStorage {
 
   async createOrUpdateAgentExecution(
     workspaceId: string,
-    status: string,
-    currentNode?: string,
-    metadata?: any
+    data: {
+      prompt?: string;
+      status: string;
+      current_step: string;
+      progress: number;
+      attempt_count?: number;
+      last_failed_step?: string | null;
+      logs: any[];
+      files_generated: any[];
+      errors: any[];
+    }
   ): Promise<AgentExecution> {
     // Try to find existing execution
     const existing = await this.getAgentExecution(workspaceId);
 
     if (existing) {
-      // Update existing
+      // Update existing execution
       const [updated] = await db
         .update(agentExecutions)
         .set({
-          status,
-          currentNode,
-          metadata,
+          prompt: data.prompt || existing.prompt,
+          status: data.status,
+          current_step: data.current_step,
+          progress: data.progress,
+          attempt_count: data.attempt_count !== undefined ? data.attempt_count : existing.attempt_count,
+          last_failed_step: data.last_failed_step !== undefined ? data.last_failed_step : existing.last_failed_step,
+          logs: data.logs,
+          files_generated: data.files_generated,
+          errors: data.errors,
           updatedAt: new Date(),
         })
         .where(eq(agentExecutions.id, existing.id))
         .returning();
       return updated;
     } else {
-      // Create new
+      // Create new execution
       const [created] = await db
         .insert(agentExecutions)
-        .values({ workspaceId, status, currentNode, metadata })
+        .values({
+          workspaceId,
+          prompt: data.prompt || null,
+          status: data.status,
+          current_step: data.current_step,
+          progress: data.progress,
+          attempt_count: data.attempt_count || 0,
+          last_failed_step: data.last_failed_step ?? null,
+          logs: data.logs,
+          files_generated: data.files_generated,
+          errors: data.errors,
+        })
         .returning();
       return created;
     }
