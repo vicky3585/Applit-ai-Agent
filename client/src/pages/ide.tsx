@@ -20,6 +20,8 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useIDECommands } from "@/hooks/use-ide-commands";
 import { useFilePresence } from "@/hooks/use-file-presence";
+import { useCollaborators } from "@/providers/CollaboratorsProvider";
+import UserListPanel from "@/components/UserListPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -91,6 +93,31 @@ export default function IDE() {
   
   // File presence state (Task 7.8: Multiplayer presence indicators)
   const { filePresence, handleAwarenessUpdate, clearPresenceForFile } = useFilePresence();
+  
+  // Stable user ID for current user (Task 7.9 fix: must match CodeEditor's userId)
+  const currentUserIdRef = useRef("user1"); // Default matches CodeEditor
+  const currentUsernameRef = useRef("Anonymous"); // Default matches CodeEditor
+  
+  // Collaborators state (Task 7.9: User List Panel)
+  const { state: collaboratorsState, upsertFilePresence, clearFilePresence } = useCollaborators();
+  
+  // Combined awareness handler (Task 7.9: Update both file presence and collaborators registry)
+  const handleCombinedAwarenessUpdate = useCallback((fileId: string, users: any[]) => {
+    // Update file-level presence indicators (Task 7.8)
+    handleAwarenessUpdate(fileId, users);
+    
+    // Update workspace-level collaborators registry (Task 7.9)
+    upsertFilePresence(fileId, users.map(u => ({
+      ...u,
+      connected: true, // Awareness updates mean the user is connected
+    })));
+  }, [handleAwarenessUpdate, upsertFilePresence]);
+  
+  // Combined clear handler
+  const handleCombinedClearPresence = useCallback((fileId: string) => {
+    clearPresenceForFile(fileId);
+    clearFilePresence(fileId);
+  }, [clearPresenceForFile, clearFilePresence]);
 
   // Fetch files
   const { data: files = [] } = useQuery<any[]>({
@@ -502,6 +529,9 @@ export default function IDE() {
   };
 
   const handleTabClose = (tabId: string) => {
+    // Note: Don't manually clear presence here - CodeEditor's cleanup will call
+    // onAwarenessUpdate(tabId, []) which triggers handleCombinedClearPresence
+    
     setOpenTabs((prev) => prev.filter((tab) => tab.id !== tabId));
     if (activeTabId === tabId) {
       const remaining = openTabs.filter((tab) => tab.id !== tabId);
@@ -768,7 +798,9 @@ export default function IDE() {
                     onTabChange={setActiveTabId}
                     onTabClose={handleTabClose}
                     onContentChange={handleContentChange}
-                    onAwarenessUpdate={handleAwarenessUpdate}
+                    onAwarenessUpdate={handleCombinedAwarenessUpdate}
+                    userId={currentUserIdRef.current}
+                    username={currentUsernameRef.current}
                   />
                 </div>
               </TabsContent>
@@ -783,7 +815,7 @@ export default function IDE() {
                       onTabChange={setActiveTabId}
                       onTabClose={handleTabClose}
                       onContentChange={handleContentChange}
-                      onAwarenessUpdate={handleAwarenessUpdate}
+                      onAwarenessUpdate={handleCombinedAwarenessUpdate}
                     />
                   </ResizablePanel>
                   <ResizableHandle />
@@ -838,6 +870,9 @@ export default function IDE() {
               <TabsTrigger value="packages" className="text-xs" data-testid="tab-packages">
                 Packages
               </TabsTrigger>
+              <TabsTrigger value="users" className="text-xs" data-testid="tab-users">
+                Users
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="chat" className="flex-1 m-0 overflow-hidden">
               <ChatPanel
@@ -870,6 +905,12 @@ export default function IDE() {
             </TabsContent>
             <TabsContent value="packages" className="flex-1 m-0 overflow-hidden">
               <PackageInstallation installations={packageInstallations} />
+            </TabsContent>
+            <TabsContent value="users" className="flex-1 m-0 overflow-hidden">
+              <UserListPanel 
+                users={collaboratorsState.list}
+                currentUserId={currentUserIdRef.current}
+              />
             </TabsContent>
           </Tabs>
         </ResizablePanel>
