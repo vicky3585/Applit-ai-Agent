@@ -104,7 +104,7 @@ export default function TopBar({
                 <span className="text-sm font-semibold">{workspaceName}</span>
                 <ChevronDown className="w-3 h-3" />
               </div>
-              <span className="text-xs text-muted-foreground">AI Web IDE</span>
+              <span className="text-xs text-muted-foreground">Applit</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-64" data-testid="menu-workspace-switcher">

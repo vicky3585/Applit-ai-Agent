@@ -122,14 +122,17 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8 max-w-7xl">
+    <div className="min-h-screen bg-background flex flex-col">
+      <div className="container mx-auto px-4 py-8 max-w-7xl flex-1">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-4xl font-bold mb-2">My Workspaces</h1>
+            <div className="flex items-center gap-3 mb-2">
+              <Code2 className="w-10 h-10 text-primary" />
+              <h1 className="text-4xl font-bold">Applit</h1>
+            </div>
             <p className="text-muted-foreground">
-              Manage your projects and start coding
+              AI-Powered Development Environment - Manage your projects and start coding
             </p>
           </div>
           
@@ -288,6 +291,15 @@ export default function Dashboard() {
           </DialogContent>
         </Dialog>
       </div>
+      
+      {/* Footer */}
+      <footer className="border-t bg-background py-6">
+        <div className="container mx-auto px-4 max-w-7xl">
+          <p className="text-center text-sm text-muted-foreground">
+            Developed by <span className="font-semibold text-foreground">Flying Venture System</span>
+          </p>
+        </div>
+      </footer>
     </div>
   );
 }

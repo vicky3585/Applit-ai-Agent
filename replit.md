@@ -1,7 +1,9 @@
-# AI Web IDE - Replit Core Clone
+# Applit - AI-Powered Development Environment
+
+**Developed by Flying Venture System**
 
 ## Overview
-This project is an AI-powered Web IDE designed as a local Replit Core clone. Its primary goal is to facilitate full "prompt-to-app" workflows, allowing users to describe applications in natural language. The system then automates the planning, coding, testing, and deployment processes, offering a live preview within a split-screen code editor. It integrates essential development tools, AI agents for code generation and correction, file persistence, hot reload capabilities, and a scalable architecture to provide a comprehensive development environment.
+Applit is an AI-powered Web IDE designed to facilitate full "prompt-to-app" workflows, allowing users to describe applications in natural language. The system then automates the planning, coding, testing, and deployment processes, offering a live preview within a split-screen code editor. It integrates essential development tools, AI agents for code generation and correction, file persistence, hot reload capabilities, and a scalable architecture to provide a comprehensive development environment.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
