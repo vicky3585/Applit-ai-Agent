@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useRoute, useLocation } from "wouter";
 import TopBar from "@/components/TopBar";
 import FileExplorer from "@/components/FileExplorer";
 import CodeEditor from "@/components/CodeEditor";
@@ -39,8 +40,6 @@ import {
   Code, Eye, Layers, Save
 } from "lucide-react";
 
-const WORKSPACE_ID = "default-workspace";
-
 interface FileNode {
   id: string;
   name: string;
@@ -57,7 +56,7 @@ function deriveAgentStatus(workflowState: AgentWorkflowState | null): AgentStep 
   return workflowState.current_step;
 }
 
-function IDEContent() {
+function IDEContent({ workspaceId }: { workspaceId: string }) {
   const { toast } = useToast();
   const user = useAuthenticatedUser(); // Get authenticated user (guaranteed non-null)
   const [agentStatus, setAgentStatus] = useState<AgentStep>("idle");
@@ -104,12 +103,12 @@ function IDEContent() {
 
   // Fetch files
   const { data: files = [] } = useQuery<any[]>({
-    queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`],
+    queryKey: [`/api/workspaces/${workspaceId}/files`],
   });
 
   // Fetch chat messages
   useEffect(() => {
-    fetch(`/api/workspaces/${WORKSPACE_ID}/chat`)
+    fetch(`/api/workspaces/${workspaceId}/chat`)
       .then((res) => res.json())
       .then((messages) => setChatMessages(messages));
   }, []);
@@ -130,7 +129,7 @@ function IDEContent() {
     // Start polling every 2 seconds
     const pollStatus = async () => {
       try {
-        const response = await fetch(`/api/workspaces/${WORKSPACE_ID}/agent/status`);
+        const response = await fetch(`/api/workspaces/${workspaceId}/agent/status`);
         if (response.ok) {
           const status: AgentWorkflowState = await response.json();
           failureCount = 0; // Reset on success
@@ -209,7 +208,7 @@ function IDEContent() {
     }
 
     // Invalidate files query to refresh file list
-    queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+    queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${workspaceId}/files`] });
   };
 
   const handlePollingFailure = () => {
@@ -232,7 +231,7 @@ function IDEContent() {
 
   // WebSocket connection
   useEffect(() => {
-    const ws = new WebSocketClient(WORKSPACE_ID);
+    const ws = new WebSocketClient(workspaceId);
     wsRef.current = ws;
 
     ws.on("agent_state", (data: any) => {
@@ -264,7 +263,7 @@ function IDEContent() {
 
     ws.on("files_updated", (data: any) => {
       // Refresh file list when agent generates new files
-      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${workspaceId}/files`] });
       addLog("info", `Files updated: ${data.fileCount} file(s) generated`);
     });
 
@@ -405,14 +404,14 @@ function IDEContent() {
     
     wsRef.current.send({
       type: "chat_message",
-      workspaceId: WORKSPACE_ID,
+      workspaceId: workspaceId,
       content,
     });
   };
 
   const generateWithAIMutation = useMutation({
     mutationFn: async (prompt: string) => {
-      return apiRequest("POST", `/api/workspaces/${WORKSPACE_ID}/agent/generate`, { prompt });
+      return apiRequest("POST", `/api/workspaces/${workspaceId}/agent/generate`, { prompt });
     },
     onSuccess: () => {
       // Clear previous workflow state and completion flag
@@ -459,14 +458,14 @@ function IDEContent() {
 
   const createFileMutation = useMutation({
     mutationFn: async ({ path, content }: { path: string; content: string }) => {
-      return apiRequest("POST", `/api/workspaces/${WORKSPACE_ID}/files`, { 
+      return apiRequest("POST", `/api/workspaces/${workspaceId}/files`, { 
         path, 
         content: content || "",
         language: path.split(".").pop() || "plaintext"
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${workspaceId}/files`] });
     },
   });
 
@@ -475,7 +474,7 @@ function IDEContent() {
       return apiRequest("PUT", `/api/files/${id}`, { content });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${workspaceId}/files`] });
     },
   });
 
@@ -484,7 +483,7 @@ function IDEContent() {
       return apiRequest("PATCH", `/api/files/${id}/rename`, { newPath });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${workspaceId}/files`] });
     },
   });
 
@@ -493,7 +492,7 @@ function IDEContent() {
       return apiRequest("DELETE", `/api/files/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${WORKSPACE_ID}/files`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/workspaces/${workspaceId}/files`] });
     },
   });
 
@@ -647,7 +646,7 @@ function IDEContent() {
     if (wsRef.current) {
       wsRef.current.send({
         type: "terminal_command",
-        workspaceId: WORKSPACE_ID,
+        workspaceId: workspaceId,
         command,
       });
     }
@@ -812,6 +811,7 @@ function IDEContent() {
   return (
     <div className="h-screen flex flex-col bg-background">
       <TopBar
+        workspaceId={workspaceId}
         workspaceName="my-project"
         agentStatus={agentStatus}
         onRunAgent={() => console.log("Run agent")}
@@ -902,19 +902,19 @@ function IDEContent() {
                   </ResizablePanel>
                   <ResizableHandle />
                   <ResizablePanel defaultSize={50} minSize={30}>
-                    <PreviewPane workspaceId={WORKSPACE_ID} autoReload={true} />
+                    <PreviewPane workspaceId={workspaceId} autoReload={true} />
                   </ResizablePanel>
                 </ResizablePanelGroup>
               </TabsContent>
 
               {/* code-server (VS Code) */}
               <TabsContent value="code-server" className="flex-1 m-0 overflow-hidden">
-                <CodeServerFrame workspaceId={WORKSPACE_ID} />
+                <CodeServerFrame workspaceId={workspaceId} />
               </TabsContent>
 
               {/* Live Preview */}
               <TabsContent value="preview" className="flex-1 m-0 overflow-hidden">
-                <PreviewPane workspaceId={WORKSPACE_ID} autoReload={true} />
+                <PreviewPane workspaceId={workspaceId} autoReload={true} />
               </TabsContent>
             </Tabs>
 
@@ -972,12 +972,12 @@ function IDEContent() {
             </TabsContent>
             <TabsContent value="execution" className="flex-1 m-0 overflow-hidden">
               <CodeExecutionPanel
-                workspaceId={WORKSPACE_ID}
+                workspaceId={workspaceId}
                 selectedFileId={activeTabId}
               />
             </TabsContent>
             <TabsContent value="git" className="flex-1 m-0 overflow-hidden">
-              <GitPanel workspaceId={WORKSPACE_ID} />
+              <GitPanel workspaceId={workspaceId} />
             </TabsContent>
             <TabsContent value="state" className="flex-1 m-0 overflow-hidden">
               <AgentStatePanel agentStatus={agentStatus} />
@@ -1000,23 +1000,23 @@ function IDEContent() {
         </ResizablePanel>
       </ResizablePanelGroup>
 
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} workspaceId={WORKSPACE_ID} />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} workspaceId={workspaceId} />
       <TemplateSelectorModal 
         open={templatesOpen} 
         onClose={() => setTemplatesOpen(false)}
-        workspaceId={WORKSPACE_ID}
+        workspaceId={workspaceId}
       />
 
       <PackageManagerModal 
         open={packagesOpen} 
         onClose={() => setPackagesOpen(false)}
-        workspaceId={WORKSPACE_ID}
+        workspaceId={workspaceId}
       />
 
       <GitHubBrowserModal
         open={githubBrowserOpen}
         onOpenChange={setGithubBrowserOpen}
-        workspaceId={WORKSPACE_ID}
+        workspaceId={workspaceId}
       />
 
       {/* New File Dialog */}
@@ -1171,7 +1171,17 @@ export default function IDE() {
  */
 function IDEWithAuth() {
   const { user, isLoading } = useAuth();
-  const WORKSPACE_ID = "default-workspace";
+  const [, navigate] = useLocation();
+  const [match, params] = useRoute("/ide/:workspaceId");
+
+  // Extract workspaceId from route
+  const workspaceId = params?.workspaceId;
+
+  // Redirect to dashboard if no workspaceId
+  if (!match || !workspaceId) {
+    navigate("/dashboard");
+    return null;
+  }
 
   // Block rendering until user is available (either from auth or fallback)
   // This prevents WorkspaceAwarenessProvider from being instantiated with empty props
@@ -1190,11 +1200,11 @@ function IDEWithAuth() {
   // User is guaranteed non-null here, so WorkspaceAwarenessProvider gets valid props
   return (
     <WorkspaceAwarenessProvider
-      workspaceId={WORKSPACE_ID}
+      workspaceId={workspaceId}
       userId={user.id}
       username={user.username}
     >
-      <IDEContent />
+      <IDEContent workspaceId={workspaceId} />
     </WorkspaceAwarenessProvider>
   );
 }

@@ -1,10 +1,21 @@
-import { Code2, Play, Pause, RotateCcw, Settings, Moon, Sun, Package, Sparkles, Github } from "lucide-react";
+import { Code2, Play, Pause, RotateCcw, Settings, Moon, Sun, Package, Sparkles, Github, ChevronDown, LayoutDashboard, FolderOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { AgentStep } from "@shared/schema";
 
+interface Workspace {
+  id: string;
+  name: string;
+  userId: string;
+  createdAt: string;
+}
+
 interface TopBarProps {
+  workspaceId?: string;
   workspaceName?: string;
   agentStatus?: AgentStep;
   onRunAgent?: () => void;
@@ -19,6 +30,7 @@ interface TopBarProps {
 }
 
 export default function TopBar({
+  workspaceId,
   workspaceName = "my-project",
   agentStatus = "idle",
   onRunAgent,
@@ -32,6 +44,12 @@ export default function TopBar({
   onStopFollowing,
 }: TopBarProps) {
   const [darkMode, setDarkMode] = useState(false);
+  const [, navigate] = useLocation();
+
+  // Fetch all workspaces for the switcher
+  const { data: workspaces = [] } = useQuery<Workspace[]>({
+    queryKey: ["/api/workspaces"],
+  });
 
   const toggleDarkMode = () => {
     setDarkMode(!darkMode);
@@ -48,14 +66,66 @@ export default function TopBar({
     failed: "bg-destructive/10 text-destructive",
   };
 
+  const handleSwitchWorkspace = (id: string) => {
+    navigate(`/ide/${id}`);
+  };
+
+  const handleGoToDashboard = () => {
+    navigate("/dashboard");
+  };
+
   return (
     <div className="h-14 border-b bg-background flex items-center justify-between px-4 gap-4">
       <div className="flex items-center gap-3">
         <Code2 className="w-6 h-6 text-primary" data-testid="icon-logo" />
-        <div className="flex flex-col">
-          <span className="text-sm font-semibold" data-testid="text-workspace-name">{workspaceName}</span>
-          <span className="text-xs text-muted-foreground">AI Web IDE</span>
-        </div>
+        
+        {/* Workspace Switcher */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button 
+              variant="ghost" 
+              className="flex flex-col items-start h-auto py-1 px-2 hover-elevate"
+              data-testid="button-workspace-switcher"
+            >
+              <div className="flex items-center gap-1">
+                <span className="text-sm font-semibold">{workspaceName}</span>
+                <ChevronDown className="w-3 h-3" />
+              </div>
+              <span className="text-xs text-muted-foreground">AI Web IDE</span>
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64" data-testid="menu-workspace-switcher">
+            <DropdownMenuLabel>Switch Workspace</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            
+            {workspaces.length > 0 ? (
+              workspaces.map((workspace) => (
+                <DropdownMenuItem
+                  key={workspace.id}
+                  onClick={() => handleSwitchWorkspace(workspace.id)}
+                  className={workspace.id === workspaceId ? "bg-accent" : ""}
+                  data-testid={`menu-item-workspace-${workspace.id}`}
+                >
+                  <FolderOpen className="w-4 h-4 mr-2" />
+                  {workspace.name}
+                  {workspace.id === workspaceId && (
+                    <Badge variant="secondary" className="ml-auto">Current</Badge>
+                  )}
+                </DropdownMenuItem>
+              ))
+            ) : (
+              <DropdownMenuItem disabled>
+                No workspaces found
+              </DropdownMenuItem>
+            )}
+            
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleGoToDashboard} data-testid="menu-item-dashboard">
+              <LayoutDashboard className="w-4 h-4 mr-2" />
+              Go to Dashboard
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <div className="flex items-center gap-2">
