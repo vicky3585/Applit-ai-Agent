@@ -10,21 +10,54 @@ import { useToast } from "@/hooks/use-toast";
  * This provides real-time updates when workspaces are modified in other tabs
  * or by other users, preventing stale data and invalid routes.
  */
-export function useWorkspaceEvents(currentWorkspaceId?: string) {
-  const [, navigate] = useLocation();
+export function useWorkspaceEvents(userId: string = "user1") {
+  const [location, navigate] = useLocation();
   const { toast } = useToast();
+  
+  // Extract current workspace ID from route (if on IDE page)
+  const currentWorkspaceId = location.startsWith("/ide/") 
+    ? location.split("/ide/")[1] 
+    : undefined;
 
   useEffect(() => {
-    // Connect to WebSocket (reuse existing WebSocketClient if available)
-    // For now, we'll listen on the global window for workspace events
-    // This will be enhanced when WebSocketClient is updated to support global events
+    // Only connect if on IDE page (workspace-specific events)
+    // For V1, we only subscribe when actively viewing a workspace
+    // TODO: For multi-tab support, consider connecting from dashboard too
+    if (!currentWorkspaceId) {
+      return;
+    }
     
-    const handleWorkspaceEvent = (event: MessageEvent) => {
+    // Connect to WebSocket for real-time workspace events
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (error) {
+      console.error("[WorkspaceEvents] Failed to create WebSocket:", error);
+      return;
+    }
+    
+    ws.onopen = () => {
+      console.log("[WorkspaceEvents] WebSocket connected for workspace:", currentWorkspaceId);
+      
+      // Join workspace to receive events
+      ws.send(JSON.stringify({
+        type: "join",
+        workspaceId: currentWorkspaceId,
+        userId: userId,
+      }));
+    };
+    
+    ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
         
         if (message.type === "workspace.deleted") {
           const { workspaceId, workspaceName } = message.payload;
+          
+          console.log(`[WorkspaceEvents] Workspace deleted: ${workspaceId}`);
           
           // Invalidate workspace list cache
           queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
@@ -49,17 +82,21 @@ export function useWorkspaceEvents(currentWorkspaceId?: string) {
           }
         }
       } catch (error) {
-        console.error("[WorkspaceEvents] Error handling event:", error);
+        console.error("[WorkspaceEvents] Error handling message:", error);
       }
     };
-
-    // Listen for workspace events from WebSocket
-    // Note: This requires the WebSocketClient to be updated to emit events globally
-    // For now, this is a placeholder that will work once WebSocket integration is complete
-    window.addEventListener("workspace-event", handleWorkspaceEvent as any);
+    
+    ws.onerror = (error) => {
+      console.error("[WorkspaceEvents] WebSocket error:", error);
+    };
+    
+    ws.onclose = () => {
+      console.log("[WorkspaceEvents] WebSocket disconnected");
+    };
 
     return () => {
-      window.removeEventListener("workspace-event", handleWorkspaceEvent as any);
+      console.log("[WorkspaceEvents] Cleaning up WebSocket connection");
+      ws.close();
     };
-  }, [currentWorkspaceId, navigate, toast]);
+  }, [currentWorkspaceId, userId, navigate, toast, location]);
 }

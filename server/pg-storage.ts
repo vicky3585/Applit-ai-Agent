@@ -57,7 +57,7 @@ export class PostgresStorage implements IStorage {
       .values({
         id: "default-workspace",
         name: "my-project",
-        userId: "default-user",
+        userId: "user1",
       })
       .returning();
 

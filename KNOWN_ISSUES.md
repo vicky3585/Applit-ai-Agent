@@ -100,4 +100,32 @@ const env = detectEnvironment();  // 'replit' | 'local'
 
 ---
 
+## Workspace Events (Task v1-8)
+
+### Real-time Deletion Events - V1 Scope
+
+**Current Implementation (V1)**:
+- ✅ **Critical use case**: User viewing workspace in IDE → workspace deleted → real-time event + toast + redirect
+- ✅ WebSocket subscription active when viewing a specific workspace
+- ✅ Secure per-user event broadcasting (validates ownership before join)
+- ✅ Prevents stale data when actively working in a deleted workspace
+
+**V1 Limitation**:
+- Dashboard users rely on aggressive refetching instead of real-time events
+- If workspace deleted in another tab while on dashboard → updates within 30s or on window focus
+- **Mitigation**: Dashboard configured with `refetchOnWindowFocus: true` and `staleTime: 30s`
+
+**Why This is Acceptable for V1**:
+1. Primary bug (stale IDE state) is fully fixed
+2. Dashboard scenario less critical (not actively working)
+3. Aggressive refetching provides acceptable UX
+4. Full multi-route support would require complex "join all workspaces" logic
+
+**Future Enhancement (V2)**:
+- Subscribe to workspace events from any route (dashboard, settings, etc.)
+- Join all owned workspaces on connection
+- Real-time updates across all routes and tabs
+
+---
+
 Last Updated: November 14, 2025

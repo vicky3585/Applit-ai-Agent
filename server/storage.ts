@@ -145,7 +145,7 @@ export class MemStorage implements IStorage {
     const defaultWorkspace: Workspace = {
       id: "default-workspace",
       name: "my-project",
-      userId: "default-user",
+      userId: "user1",
       createdAt: new Date(),
     };
     this.workspaces.set(defaultWorkspace.id, defaultWorkspace);
