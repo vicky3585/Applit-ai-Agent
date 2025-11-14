@@ -9,12 +9,14 @@ interface UserListPanelProps {
   users: WorkspaceUserPresence[];
   currentUserId: string;
   onUserClick?: (userId: string) => void;
+  followingUserId?: string | null;
 }
 
 const UserListPanel = memo(function UserListPanel({ 
   users, 
   currentUserId,
-  onUserClick 
+  onUserClick,
+  followingUserId
 }: UserListPanelProps) {
   const activeUsers = users.filter(u => u.userId !== currentUserId);
   const currentUser = users.find(u => u.userId === currentUserId);
@@ -70,10 +72,12 @@ const UserListPanel = memo(function UserListPanel({
                 Active Collaborators ({activeUsers.length})
               </div>
               <div className="space-y-2">
-                {activeUsers.map((user) => (
+                {activeUsers.map((user) => {
+                  const isFollowing = followingUserId === user.userId;
+                  return (
                   <Card 
                     key={user.userId}
-                    className={`p-3 ${onUserClick ? 'hover-elevate active-elevate-2 cursor-pointer' : ''}`}
+                    className={`p-3 ${onUserClick ? 'hover-elevate active-elevate-2 cursor-pointer' : ''} ${isFollowing ? 'ring-2 ring-blue-500' : ''}`}
                     onClick={() => onUserClick?.(user.userId)}
                     data-testid={`user-card-${user.userId}`}
                   >
@@ -114,7 +118,8 @@ const UserListPanel = memo(function UserListPanel({
                       </div>
                     </div>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

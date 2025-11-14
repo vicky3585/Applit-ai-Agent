@@ -793,6 +793,22 @@ function IDEContent() {
                            !newFileDialogOpen && !renameDialogOpen && !deleteDialogOpen;
   useKeyboardShortcuts(shortcuts, shortcutsEnabled);
 
+  // Task 7.10: ESC key handler to exit follow mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && followingUserId) {
+        setFollowingUserId(null);
+        toast({
+          title: "Stopped following",
+          description: "Follow mode exited (ESC pressed)",
+        });
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [followingUserId]);
+
   return (
     <div className="h-screen flex flex-col bg-background">
       <TopBar
@@ -805,6 +821,8 @@ function IDEContent() {
         onGitHub={() => setGithubBrowserOpen(true)}
         onPackages={() => setPackagesOpen(true)}
         onSettings={() => setSettingsOpen(true)}
+        followingUserName={followingUserId ? workspaceUsers.find(u => u.userId === followingUserId)?.name : null}
+        onStopFollowing={() => setFollowingUserId(null)}
       />
 
       <ResizablePanelGroup direction="horizontal" className="flex-1">
@@ -975,6 +993,7 @@ function IDEContent() {
                 users={workspaceUsers}
                 currentUserId={user.id}
                 onUserClick={handleUserClick}
+                followingUserId={followingUserId}
               />
             </TabsContent>
           </Tabs>

@@ -14,6 +14,8 @@ interface TopBarProps {
   onPackages?: () => void;
   onTemplates?: () => void;
   onGitHub?: () => void;
+  followingUserName?: string | null;
+  onStopFollowing?: () => void;
 }
 
 export default function TopBar({
@@ -26,6 +28,8 @@ export default function TopBar({
   onPackages,
   onTemplates,
   onGitHub,
+  followingUserName,
+  onStopFollowing,
 }: TopBarProps) {
   const [darkMode, setDarkMode] = useState(false);
 
@@ -58,6 +62,24 @@ export default function TopBar({
         <Badge className={statusColors[agentStatus]} data-testid="badge-agent-status">
           {agentStatus === "idle" ? "Ready" : agentStatus.charAt(0).toUpperCase() + agentStatus.slice(1)}
         </Badge>
+        
+        {followingUserName && (
+          <Badge 
+            className="bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center gap-1.5 pr-1" 
+            data-testid="badge-following-user"
+          >
+            Following {followingUserName}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-4 w-4 hover:bg-blue-500/20 rounded-sm"
+              onClick={onStopFollowing}
+              data-testid="button-stop-following"
+            >
+              ✕
+            </Button>
+          </Badge>
+        )}
         
         {(agentStatus === "idle" || agentStatus === "complete" || agentStatus === "failed") ? (
           <Button 
