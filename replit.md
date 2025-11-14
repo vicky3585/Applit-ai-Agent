@@ -8,7 +8,32 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Progress
 
-**Phase 7 Multiplayer Foundation - Tasks 7.5-7.9 Complete (November 14, 2025):**
+**V1 MVP - Auto-Start Dev Servers & Preview (November 14, 2025):**
+
+✅ **Tasks 2-5 Complete** - Auto-start dev servers and preview routing implemented:
+- **Task 2**: Template application auto-starts dev servers after writing files to disk
+- **Task 3**: AI-generated code triggers dev server auto-start after validation
+- **Task 4**: Dev server proxy middleware with WebSocket upgrade handler for live previews (React/Vite/Next.js HMR support)
+- **Task 5**: Preview routing auto-detects dev server and proxies requests, or falls back to static file serving
+
+**Architecture**:
+- `FilePersistence.resolveWorkspacePath()`: Always returns workspace directory path (even when sync disabled) for dev server operation
+- `FilePersistence.saveFile()`: Removes sync check to ensure template files always written to disk
+- Dev server proxy: `app.use("/preview/:workspaceId")` middleware checks for dev server, creates proxy if exists, falls through to static files otherwise
+- WebSocket upgrades: `httpServer.on("upgrade")` handler dynamically routes `/preview/:workspaceId/*` WebSocket connections to dev servers for HMR support
+- Template application flow: Write files → Sync to disk → Resolve workspace path → Start dev server → Return dev server info
+
+**Environment Support**:
+- ✅ **Local Ubuntu (ENV=local)**: Full auto-start dev server support with Docker sandbox
+- ✅ **Replit Hosting**: Templates apply correctly, files saved to storage
+- ⚠️ **Environment Detection**: Auto-start gated behind `ENV_CONFIG.sandbox.available` check
+  - Local: Auto-starts dev servers after template application and AI code generation
+  - Replit: Shows clear message "start dev server manually in Terminal" instead of failing with errors
+- 📝 **Preview Support**: 
+  - Local: Full proxy + WebSocket HMR support for live development servers
+  - Replit: Static file serving works for HTML/CSS/JS files
+
+**Phase 7 Multiplayer Foundation - Tasks 7.5-7.10 Complete (November 14, 2025):**
 
 ✅ **Task 7.5: Yjs Persistence Layer** - E2E tested and verified working:
 - Implemented three storage methods: `getYjsDocument`, `upsertYjsDocument`, `deleteYjsDocument`

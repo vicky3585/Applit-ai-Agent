@@ -18,13 +18,11 @@ export class FilePersistence {
 
   /**
    * Save a file to disk
+   * 
+   * NOTE: Always saves files when called explicitly (e.g., template application)
+   * The enableSync flag only controls automatic background sync operations
    */
   async saveFile(workspaceId: string, filePath: string, content: string): Promise<void> {
-    if (!this.enableSync) {
-      console.log(`[FilePersistence] Sync disabled - skipping save: ${filePath}`);
-      return;
-    }
-
     try {
       const fullPath = await this.getFullPathAsync(workspaceId, filePath);
       const dir = path.dirname(fullPath);
@@ -43,12 +41,11 @@ export class FilePersistence {
 
   /**
    * Read a file from disk
+   * 
+   * NOTE: Always reads files when called explicitly (e.g., preview, static serving)
+   * The enableSync flag only controls automatic background sync operations
    */
   async readFile(workspaceId: string, filePath: string): Promise<string> {
-    if (!this.enableSync) {
-      throw new Error("File persistence is disabled in this environment");
-    }
-
     try {
       const fullPath = await this.getFullPathAsync(workspaceId, filePath);
       const content = await fs.readFile(fullPath, "utf-8");
@@ -136,15 +133,23 @@ export class FilePersistence {
   /**
    * Resolve and initialize workspace path (public helper for dev servers)
    * Ensures workspace directory exists and returns the correct filesystem path
+   * 
+   * NOTE: Always returns a path (even when sync disabled) because dev servers
+   * need a workspace directory to run in, even if file sync is disabled
    */
   async resolveWorkspacePath(workspaceId: string): Promise<string | null> {
-    if (!this.enableSync) {
-      return null; // File sync disabled
+    // Get workspace path
+    const workspacePath = this.getWorkspacePath(workspaceId);
+    
+    // Ensure directory exists (needed for dev servers even if sync disabled)
+    try {
+      await fs.mkdir(workspacePath, { recursive: true });
+    } catch (error: any) {
+      console.error(`[FilePersistence] Failed to create workspace directory:`, error.message);
+      return null;
     }
-
-    // Ensure workspace is initialized
-    await this.initializeWorkspace(workspaceId);
-    return this.getWorkspacePath(workspaceId);
+    
+    return workspacePath;
   }
 
   private getWorkspacePath(workspaceId: string): string {

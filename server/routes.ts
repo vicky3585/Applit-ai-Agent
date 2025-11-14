@@ -1388,49 +1388,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       broadcastProgress("Template applied successfully!");
 
+      // Sync all files to disk (required for preview and manual dev server start)
+      try {
+        const { getFilePersistence } = await import("./file-persistence");
+        const persistence = getFilePersistence();
+        
+        broadcastProgress("Syncing files to disk...");
+        for (const file of createdFiles) {
+          await persistence.saveFile(workspaceId, file.path, file.content);
+        }
+        console.log(`[Templates] Synced ${createdFiles.length} files to disk`);
+      } catch (error: any) {
+        console.error("[Templates] File sync error:", error);
+        broadcastProgress(`Warning: Could not sync files to disk - ${error.message}`);
+      }
+
       // AUTO-START DEV SERVER (Task 2: Auto-Start Dev Server After Template Application)
       let devServerInfo = null;
       if (template.devCommand) {
-        try {
-          const { getDevServerManager } = await import("./dev-server-manager");
-          const { getFilePersistence } = await import("./file-persistence");
-          
-          const manager = getDevServerManager();
-          const persistence = getFilePersistence();
-          
-          // Sync all files to disk first (required for dev server)
-          broadcastProgress("Syncing files to disk...");
-          for (const file of createdFiles) {
-            await persistence.saveFile(workspaceId, file.path, file.content);
+        // Check if dev server auto-start is available (requires Docker/local environment)
+        const { ENV_CONFIG } = await import("@shared/environment");
+        
+        if (!ENV_CONFIG.sandbox.available) {
+          console.log("[Templates] Dev server auto-start unavailable (requires Docker/local environment)");
+          broadcastProgress("Template ready - start dev server manually in Terminal");
+        } else {
+          try {
+            const { getDevServerManager } = await import("./dev-server-manager");
+            const { getFilePersistence } = await import("./file-persistence");
+            
+            const manager = getDevServerManager();
+            const persistence = getFilePersistence();
+            
+            // Get workspace path using FilePersistence helper (ensures directory exists)
+            const workspacePath = await persistence.resolveWorkspacePath(workspaceId);
+            
+            if (!workspacePath) {
+              throw new Error("Failed to create workspace directory");
+            }
+            
+            // Start dev server
+            broadcastProgress("Starting dev server...");
+            const server = await manager.startServer(workspaceId, workspacePath);
+            
+            if (server) {
+              console.log(`[Templates] Dev server started on port ${server.port}`);
+              broadcastProgress(`Dev server running on port ${server.port}`);
+              devServerInfo = {
+                port: server.port,
+                url: server.url,
+                type: server.type,
+              };
+            } else {
+              console.log(`[Templates] Could not auto-start dev server`);
+              broadcastProgress("Template ready - start dev server manually if needed");
+            }
+          } catch (error: any) {
+            console.error("[Templates] Dev server start error:", error);
+            broadcastProgress(`Warning: Could not start dev server - ${error.message}`);
           }
-          console.log(`[Templates] Synced ${createdFiles.length} files to disk`);
-          
-          // Get workspace path using FilePersistence helper (ensures directory exists)
-          const workspacePath = await persistence.resolveWorkspacePath(workspaceId);
-          
-          if (!workspacePath) {
-            throw new Error("File persistence is disabled - cannot start dev server");
-          }
-          
-          // Start dev server
-          broadcastProgress("Starting dev server...");
-          const server = await manager.startServer(workspaceId, workspacePath);
-          
-          if (server) {
-            console.log(`[Templates] Dev server started on port ${server.port}`);
-            broadcastProgress(`Dev server running on port ${server.port}`);
-            devServerInfo = {
-              port: server.port,
-              url: server.url,
-              type: server.type,
-            };
-          } else {
-            console.log(`[Templates] Could not auto-start dev server`);
-            broadcastProgress("Template ready - start dev server manually if needed");
-          }
-        } catch (error: any) {
-          console.error("[Templates] Dev server start error:", error);
-          broadcastProgress(`Warning: Could not start dev server - ${error.message}`);
         }
       }
 
@@ -1717,24 +1733,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     proxies.push({ path: "/preview", proxy: previewProxy });
   }
 
-  // Register WebSocket upgrade handler for all proxies
-  if (proxies.length > 0) {
-    httpServer.on("upgrade", (req, socket, head) => {
-      const url = req.url || "";
+  // Register WebSocket upgrade handler for dynamic dev server previews
+  httpServer.on("upgrade", async (req, socket, head) => {
+    const url = req.url || "";
+    
+    // Handle dev server preview WebSocket upgrades (e.g., Vite HMR)
+    const previewMatch = url.match(/^\/preview\/([^/]+)(\/.*)?/);
+    if (previewMatch) {
+      const workspaceId = previewMatch[1];
+      const { getDevServerManager } = await import("./dev-server-manager");
+      const manager = getDevServerManager();
+      const devServer = manager.getServer(workspaceId);
       
-      // Find matching proxy by path prefix
-      for (const { path, proxy } of proxies) {
-        if (url.startsWith(path)) {
-          console.log(`[Proxy] Upgrading WebSocket for ${path}`);
-          proxy.upgrade!(req, socket, head);
-          return;
-        }
+      if (devServer && devServer.url) {
+        console.log(`[Preview Proxy] Upgrading WebSocket for workspace ${workspaceId} to ${devServer.url}`);
+        
+        // Create a temporary proxy for this upgrade
+        const wsProxy = createProxyMiddleware({
+          target: devServer.url,
+          changeOrigin: true,
+          ws: true,
+          pathRewrite: (path) => {
+            return path.replace(`/preview/${workspaceId}`, '') || '/';
+          },
+        });
+        
+        // Perform the upgrade
+        wsProxy.upgrade!(req, socket, head);
+        return;
       }
-      
-      // No matching proxy - let the default WebSocket handler take over
-      console.log(`[Proxy] No proxy matched for upgrade: ${url}`);
-    });
-  }
+    }
+    
+    // Handle static proxy WebSocket upgrades (code-server, sandbox preview)
+    for (const { path, proxy } of proxies) {
+      if (url.startsWith(path)) {
+        console.log(`[Proxy] Upgrading WebSocket for ${path}`);
+        proxy.upgrade!(req, socket, head);
+        return;
+      }
+    }
+    
+    // No matching proxy - let the default WebSocket handler take over (Yjs, etc.)
+    console.log(`[Proxy] No proxy matched for upgrade: ${url}`);
+  });
+  
+  // Note: Yjs WebSocket upgrades are handled separately in yjs-provider.ts
 
   return httpServer;
 }

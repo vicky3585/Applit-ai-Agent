@@ -122,32 +122,39 @@ export class AgentOrchestrator {
             state.logs.push("[Tester] All validation checks passed!");
             
             // AUTO-START DEV SERVER (Task 3: Auto-Start Dev Server After AI File Generation)
-            try {
-              const { getDevServerManager } = await import("../dev-server-manager");
-              const { getFilePersistence } = await import("../file-persistence");
-              
-              const manager = getDevServerManager();
-              const persistence = getFilePersistence();
-              
-              // Get workspace path using FilePersistence helper (ensures directory exists)
-              const workspacePath = await persistence.resolveWorkspacePath(context.workspaceId);
-              
-              if (!workspacePath) {
-                state.logs.push("[Orchestrator] File persistence disabled - skipping dev server start");
-              } else {
-                // Try to start dev server (non-blocking, don't fail if it doesn't work)
-                state.logs.push("[Orchestrator] Starting dev server...");
-                const server = await manager.startServer(context.workspaceId, workspacePath);
+            const { ENV_CONFIG } = await import("@shared/environment");
+            
+            if (!ENV_CONFIG.sandbox.available) {
+              state.logs.push("[Orchestrator] Dev server auto-start unavailable (requires Docker/local environment)");
+              state.logs.push("[Orchestrator] Application ready - start dev server manually in Terminal");
+            } else {
+              try {
+                const { getDevServerManager } = await import("../dev-server-manager");
+                const { getFilePersistence } = await import("../file-persistence");
                 
-                if (server) {
-                  state.logs.push(`[Orchestrator] Dev server running on port ${server.port} (${server.type})`);
+                const manager = getDevServerManager();
+                const persistence = getFilePersistence();
+                
+                // Get workspace path using FilePersistence helper (ensures directory exists)
+                const workspacePath = await persistence.resolveWorkspacePath(context.workspaceId);
+                
+                if (!workspacePath) {
+                  state.logs.push("[Orchestrator] Failed to create workspace directory");
                 } else {
-                  state.logs.push("[Orchestrator] No dev server configured (static files can still be previewed)");
+                  // Try to start dev server (non-blocking, don't fail if it doesn't work)
+                  state.logs.push("[Orchestrator] Starting dev server...");
+                  const server = await manager.startServer(context.workspaceId, workspacePath);
+                  
+                  if (server) {
+                    state.logs.push(`[Orchestrator] Dev server running on port ${server.port} (${server.type})`);
+                  } else {
+                    state.logs.push("[Orchestrator] No dev server configured (static files can still be previewed)");
+                  }
                 }
+              } catch (error: any) {
+                // Non-fatal error - just log it
+                state.logs.push(`[Orchestrator] Could not start dev server: ${error.message}`);
               }
-            } catch (error: any) {
-              // Non-fatal error - just log it
-              state.logs.push(`[Orchestrator] Could not start dev server: ${error.message}`);
             }
             
             codingSuccess = true;
