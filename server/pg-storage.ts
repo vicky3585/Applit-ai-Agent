@@ -18,6 +18,7 @@ import {
   codeExecutions,
   workspaceSettings,
   yjsDocuments,
+  deployments,
   type User,
   type InsertUser,
   type Session,
@@ -32,6 +33,7 @@ import {
   type WorkspaceSettings,
   type UpdateWorkspaceSettings,
   type YjsDocument,
+  type Deployment,
 } from "@shared/schema";
 import { fileSync } from "./file-sync";
 import type { IStorage } from "./storage";
@@ -667,5 +669,53 @@ export class PostgresStorage implements IStorage {
           eq(yjsDocuments.docName, docName)
         )
       );
+  }
+
+  async createDeployment(
+    workspaceId: string, 
+    status: import("@shared/schema").DeploymentStatus, 
+    buildCommand?: string
+  ): Promise<Deployment> {
+    const [deployment] = await db
+      .insert(deployments)
+      .values({
+        id: crypto.randomUUID(),
+        workspaceId,
+        status,
+        buildCommand: buildCommand || null,
+        createdAt: new Date(),
+      })
+      .returning();
+    return deployment;
+  }
+
+  async updateDeployment(
+    id: string,
+    updates: Partial<Pick<Deployment, 'status' | 'buildLogs' | 'artifactPath' | 'url' | 'errorMessage' | 'completedAt'>>
+  ): Promise<Deployment | undefined> {
+    const [updated] = await db
+      .update(deployments)
+      .set(updates)
+      .where(eq(deployments.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getDeployments(workspaceId: string): Promise<Deployment[]> {
+    return db
+      .select()
+      .from(deployments)
+      .where(eq(deployments.workspaceId, workspaceId))
+      .orderBy(desc(deployments.createdAt));
+  }
+
+  async getLatestDeployment(workspaceId: string): Promise<Deployment | undefined> {
+    const [latest] = await db
+      .select()
+      .from(deployments)
+      .where(eq(deployments.workspaceId, workspaceId))
+      .orderBy(desc(deployments.createdAt))
+      .limit(1);
+    return latest;
   }
 }

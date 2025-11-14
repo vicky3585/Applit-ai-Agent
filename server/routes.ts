@@ -7,7 +7,8 @@ import { storage } from "./storage-factory";
 import { sandbox } from "./sandbox";
 import OpenAI from "openai";
 import { ENV_CONFIG, validateDockerAccess, validateDatabaseAccess, getServiceUrl } from "@shared/environment";
-import { installPackageRequestSchema } from "@shared/schema";
+import { installPackageRequestSchema, triggerDeploymentSchema } from "@shared/schema";
+import { authMiddleware } from "./auth-middleware";
 import { templates, getTemplateById } from "./templates";
 import * as github from "./github";
 import * as git from "./git";
@@ -458,6 +459,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ success: true, message: "Workspace deleted successfully" });
     } catch (error: any) {
       console.error("[Workspaces] Delete error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces/:id/deploy - Deploy workspace as static app
+  app.post("/api/workspaces/:id/deploy", authMiddleware, async (req: any, res) => {
+    try {
+      const workspaceId = req.params.id;
+      
+      // Validate request body
+      const validation = triggerDeploymentSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ 
+          error: "Invalid request body",
+          details: validation.error.issues 
+        });
+      }
+      
+      const { buildCommand } = validation.data;
+      
+      // Verify workspace exists
+      const workspace = await storage.getWorkspace(workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+
+      // Verify user owns this workspace
+      if (workspace.userId !== req.user.userId) {
+        return res.status(403).json({ 
+          error: "Forbidden: You do not have permission to deploy this workspace" 
+        });
+      }
+      
+      // Create deployment record with pending status
+      const deployment = await storage.createDeployment(
+        workspaceId,
+        "pending",
+        buildCommand
+      );
+      
+      console.log(`[Deployment] Created deployment ${deployment.id} for workspace ${workspaceId}`);
+      
+      // TODO: Invoke build executor to:
+      // 1. Detect project type (package.json, vite.config, static HTML)
+      // 2. Run appropriate build command (npm run build, etc.)
+      // 3. Capture build logs to deployment.buildLogs
+      // 4. Copy artifacts to /var/www/ai-ide/<workspaceId>/<timestamp>
+      // 5. Atomic symlink swap to current
+      // 6. Update deployment status to 'success' or 'failed'
+      // 7. Set deployment.url to /apps/<workspaceId>/
+      //
+      // Build executor implementation deferred - see docs/DEPLOYMENT_GUIDE.md
+      
+      // For now, return pending deployment
+      res.status(201).json({
+        deployment,
+        message: "Deployment initiated (build executor not yet implemented)"
+      });
+      
+    } catch (error: any) {
+      console.error("[Deployment] Deploy error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/workspaces/:id/deployments - List deployments for workspace
+  app.get("/api/workspaces/:id/deployments", authMiddleware, async (req: any, res) => {
+    try {
+      const workspaceId = req.params.id;
+      
+      // Verify workspace exists
+      const workspace = await storage.getWorkspace(workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      
+      // Verify user owns this workspace
+      if (workspace.userId !== req.user.userId) {
+        return res.status(403).json({ 
+          error: "Forbidden: You do not have permission to view deployments for this workspace" 
+        });
+      }
+      
+      const deployments = await storage.getDeployments(workspaceId);
+      res.json(deployments);
+    } catch (error: any) {
+      console.error("[Deployment] List error:", error);
       res.status(500).json({ error: error.message });
     }
   });

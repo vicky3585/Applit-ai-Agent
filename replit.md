@@ -57,8 +57,8 @@ The frontend uses React 18, TypeScript, and Vite, styled with Shadcn/ui (Radix U
 The system is built on a hybrid Node.js + Python architecture. Data storage uses both in-memory (MemStorage) for the Replit environment and PostgreSQL 16 (PostgresStorage) for local Ubuntu, both implementing the IStorage contract. Concurrency in MemStorage is managed by JavaScript's event loop, while PostgresStorage uses row-level locking for atomic session operations. Authentication uses JWTs with refresh token rotation, bcrypt hashing for refresh tokens, and a progressive account lockout mechanism.
 
 **PostgreSQL Storage Status (November 2025):**
-- ✅ **Core Functionality**: PostgresStorage fully operational, all 24 IStorage methods implemented
-- ✅ **Data Persistence**: Workspace, files, chat messages, agent executions persisting correctly
+- ✅ **Core Functionality**: PostgresStorage fully operational, all 28 IStorage methods implemented
+- ✅ **Data Persistence**: Workspace, files, chat messages, agent executions, deployments persisting correctly
 - ✅ **Storage Factory**: Auto-detects DATABASE_URL accessibility, uses PostgresStorage when available
 - ✅ **Yjs Persistence**: Real-time collaborative editing documents persist to yjs_documents table
 - ✅ **Atomic Operations**: Transaction-based agent execution updates with FOR UPDATE locks
@@ -68,6 +68,20 @@ The system is built on a hybrid Node.js + Python architecture. Data storage uses
   - Schema drift from manual SQL alterations - needs Drizzle migration reconciliation
   - Input validation with Zod not yet implemented on write paths
 - **Deployment Note**: Core persistence works for Ubuntu 24.04, production fixes scheduled for focused session
+
+**Static App Deployment System (Priority 0 - January 2025):**
+- ✅ **Data Model**: Deployments table with lifecycle tracking (pending→building→success/failed), build logs, artifact paths, and public URLs
+- ✅ **Storage Layer**: 4 deployment methods added to IStorage interface with full PostgresStorage implementation and MemStorage stubs
+- ✅ **API Routes**: POST /api/workspaces/:id/deploy (trigger deployment), GET /api/workspaces/:id/deployments (list history)
+- ✅ **Nginx Template**: Path-based routing (/apps/<workspaceId>/), SPA fallback, static asset caching, security headers
+- ✅ **Documentation**: Comprehensive DEPLOYMENT_GUIDE.md with architecture decisions, testing checklist, troubleshooting
+- 🚧 **Deferred to Next Pass**:
+  - Build executor with pluggable strategy pattern (Vite, Static HTML, CRA detection)
+  - Setup script for nginx installation and permissions
+  - Build log streaming and atomic symlink deployment
+  - Frontend UI for deployment triggers and status display
+- **Architecture**: Per-workspace static builds in /var/www/ai-ide/<workspaceId>/, atomic symlink swaps, timestamped releases, zero-downtime deployments
+- **Scope**: Static-only MVP (HTML/CSS/JS), defers subdomain routing, SSL/TLS, backend deployments to later phases
 
 ## External Dependencies
 

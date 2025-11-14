@@ -262,13 +262,20 @@ export const installPackageRequestSchema = z.object({
 });
 
 // Deployment Schemas (Priority 0 - Ubuntu Static Deployment)
+export const deploymentStatusSchema = z.enum(["pending", "building", "success", "failed"]);
+
 export const insertDeploymentSchema = createInsertSchema(deployments).pick({
   workspaceId: true,
   status: true,
   buildCommand: true,
+}).extend({
+  status: deploymentStatusSchema,
+  buildCommand: z.string().optional(),
 });
 
-export const deploymentStatusSchema = z.enum(["pending", "building", "success", "failed"]);
+export const triggerDeploymentSchema = z.object({
+  buildCommand: z.string().optional(),
+});
 
 // Multiplayer Schemas (Phase 7)
 export const insertCollaboratorSchema = createInsertSchema(collaborators).pick({
