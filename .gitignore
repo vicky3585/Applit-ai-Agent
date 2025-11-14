@@ -1,6 +1,32 @@
-node_modules
-dist
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+# Environment variables
+.env
+.env.local
+# Build outputs
+dist/
+build/
+.next/
+# IDE
+.vscode/
+.idea/
+# OS
 .DS_Store
-server/public
-vite.config.ts.*
-*.tar.gz
+# Replit specific
+.replit
+replit.nix
+.config/
+.upm/
+.breakpoints
+# Logs
+*.log
+logs/
+tmp/
+# Lock files (optional - include if you want exact versions)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+# User uploads
+attached_assets/
