@@ -21,7 +21,7 @@ import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 import { useIDECommands } from "@/hooks/use-ide-commands";
 import { useFilePresence } from "@/hooks/use-file-presence";
 import { WorkspaceAwarenessProvider, useWorkspaceAwareness } from "@/providers/WorkspaceAwarenessProvider";
-import { AuthProvider, useAuth } from "@/providers/AuthProvider";
+import { AuthProvider, useAuth, useAuthenticatedUser } from "@/providers/AuthProvider";
 import UserListPanel from "@/components/UserListPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -59,7 +59,7 @@ function deriveAgentStatus(workflowState: AgentWorkflowState | null): AgentStep 
 
 function IDEContent() {
   const { toast } = useToast();
-  const { user } = useAuth(); // Get authenticated user
+  const user = useAuthenticatedUser(); // Get authenticated user (guaranteed non-null)
   const [agentStatus, setAgentStatus] = useState<AgentStep>("idle");
   
   // Workspace-level awareness (Task 7.9: Single source of truth for presence)
@@ -169,11 +169,16 @@ function IDEContent() {
   }, [isGenerating, toast]);
 
   // Task 7.9: Update workspace presence when active tab changes
+  // Include human-readable filename for display in UserListPanel
   useEffect(() => {
     if (activeTabId) {
-      setLocalPresence({ activeFile: activeTabId });
+      const activeTab = openTabs.find(tab => tab.id === activeTabId);
+      setLocalPresence({ 
+        activeFile: activeTabId,
+        activeFileName: activeTab?.name || null
+      });
     }
-  }, [activeTabId, setLocalPresence]);
+  }, [activeTabId, openTabs, setLocalPresence]);
 
   const handleWorkflowCompletion = (status: AgentWorkflowState) => {
     setIsGenerating(false);

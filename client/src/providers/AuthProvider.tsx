@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * Hook to access authenticated user data
+ * Hook to access authenticated user data (user may be null during loading)
  */
 export function useAuth() {
   const context = useContext(AuthContext);
@@ -72,4 +72,26 @@ export function useAuth() {
   }
   
   return context;
+}
+
+/**
+ * Hook to access authenticated user data (guaranteed non-null)
+ * 
+ * IMPORTANT: Only use this hook in components that are protected by an auth loading guard.
+ * This hook throws an error if called before authentication resolves.
+ * 
+ * Use this in components like IDEContent that are only rendered after IDEWithAuth's guard.
+ */
+export function useAuthenticatedUser(): AuthUser {
+  const context = useContext(AuthContext);
+  
+  if (!context) {
+    throw new Error("useAuthenticatedUser must be used within AuthProvider");
+  }
+  
+  if (!context.user) {
+    throw new Error("useAuthenticatedUser called before authentication resolved. Ensure component is wrapped by auth loading guard.");
+  }
+  
+  return context.user;
 }

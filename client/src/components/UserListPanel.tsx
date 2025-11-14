@@ -54,7 +54,7 @@ const UserListPanel = memo(function UserListPanel({
                     {currentUser.activeFile && (
                       <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
                         <FileText className="w-3 h-3" />
-                        <span className="truncate">{currentUser.activeFile}</span>
+                        <span className="truncate">{currentUser.activeFileName || currentUser.activeFile}</span>
                       </div>
                     )}
                   </div>
@@ -108,7 +108,7 @@ const UserListPanel = memo(function UserListPanel({
                             data-testid={`user-file-${user.userId}`}
                           >
                             <FileText className="w-3 h-3" />
-                            <span className="truncate">{user.activeFile}</span>
+                            <span className="truncate">{user.activeFileName || user.activeFile}</span>
                           </div>
                         )}
                       </div>

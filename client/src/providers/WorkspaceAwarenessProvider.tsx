@@ -10,7 +10,8 @@ export interface WorkspaceUserPresence {
   userId: string;
   name: string;
   color: string;
-  activeFile: string | null;
+  activeFile: string | null; // File ID for internal tracking
+  activeFileName: string | null; // Human-readable filename for display
   connected: boolean;
   lastUpdate: number;
 }
@@ -90,6 +91,7 @@ export function WorkspaceAwarenessProvider({
       name: username,
       color: getUserColor(userId),
       activeFile: null,
+      activeFileName: null,
       connected: true,
       lastUpdate: Date.now(),
     });
