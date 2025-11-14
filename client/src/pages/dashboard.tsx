@@ -34,7 +34,8 @@ export default function Dashboard() {
   // Create workspace mutation
   const createMutation = useMutation({
     mutationFn: async (name: string) => {
-      return apiRequest("POST", "/api/workspaces", { name });
+      const response = await apiRequest("POST", "/api/workspaces", { name });
+      return response.json();
     },
     onSuccess: (newWorkspace: Workspace) => {
       queryClient.invalidateQueries({ queryKey: ["/api/workspaces"] });
