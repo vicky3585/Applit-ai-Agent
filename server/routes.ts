@@ -385,7 +385,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "Workspace not found" });
       }
 
-      // TODO: Verify user owns this workspace
+      // Verify user owns this workspace
+      // TODO: Get userId from authenticated session
+      const userId = "user1"; // Default user for now
+      
+      if (workspace.userId !== userId) {
+        return res.status(403).json({ 
+          error: "Forbidden: You do not have permission to delete this workspace" 
+        });
+      }
       
       await storage.deleteWorkspace(workspaceId);
       console.log(`[Workspaces] Deleted workspace: ${workspaceId} (${workspace.name})`);
