@@ -70,6 +70,7 @@ export interface IStorage {
       attempt_count?: number;
       last_failed_step?: string | null;
       logs: any[];
+      structuredLogs?: any[]; // Phase 2: Structured logs
       files_generated: any[];
       errors: any[];
     }
@@ -465,6 +466,7 @@ export class MemStorage implements IStorage {
       attempt_count?: number;
       last_failed_step?: string | null;
       logs: any[];
+      structuredLogs?: any[]; // Phase 2
       files_generated: any[];
       errors: any[];
     }
@@ -479,6 +481,7 @@ export class MemStorage implements IStorage {
       existing.attempt_count = data.attempt_count !== undefined ? data.attempt_count : (existing.attempt_count || 0);
       existing.last_failed_step = data.last_failed_step !== undefined ? data.last_failed_step : existing.last_failed_step;
       existing.logs = data.logs;
+      existing.structuredLogs = data.structuredLogs ?? existing.structuredLogs ?? null; // Phase 2
       existing.files_generated = data.files_generated;
       existing.errors = data.errors;
       existing.updatedAt = new Date();
@@ -497,6 +500,7 @@ export class MemStorage implements IStorage {
       attempt_count: data.attempt_count || 0,
       last_failed_step: data.last_failed_step ?? null,
       logs: data.logs,
+      structuredLogs: data.structuredLogs ?? null, // Phase 2
       files_generated: data.files_generated,
       errors: data.errors,
       createdAt: new Date(),

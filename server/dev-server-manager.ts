@@ -2,6 +2,8 @@ import { spawn, ChildProcess } from "child_process";
 import fs from "fs/promises";
 import path from "path";
 import { ENV_CONFIG } from "@shared/environment";
+import { StructuredLogger } from "./logger";
+import type { LogEntry } from "@shared/schema";
 
 interface DevServer {
   workspaceId: string;
@@ -10,6 +12,14 @@ interface DevServer {
   process: ChildProcess;
   url: string;
   startedAt: Date;
+}
+
+export interface DevServerStartResult {
+  success: boolean;
+  server: DevServer | null;
+  logs: string[]; // Legacy
+  structuredLogs: LogEntry[]; // Phase 2
+  errors: string[];
 }
 
 export class DevServerManager {

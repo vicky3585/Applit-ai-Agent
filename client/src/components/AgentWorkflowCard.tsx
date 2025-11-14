@@ -1,11 +1,14 @@
-import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, FileCode } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, ChevronDown, ChevronRight, FileCode, Download, Filter } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { AgentWorkflowState, AgentStep } from "@shared/schema";
-import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { AgentWorkflowState, AgentStep, LogLevel, LogPhase, type LogEntry as LogEntryType } from "@shared/schema";
+import { useState, useMemo } from "react";
+import { LogPhaseGroup } from "./LogPhaseGroup";
+import { useToast } from "@/hooks/use-toast";
 
 interface AgentWorkflowCardProps {
   workflowState: AgentWorkflowState;
@@ -35,15 +38,68 @@ const stepColors: Record<AgentStep, string> = {
 export default function AgentWorkflowCard({ workflowState, onFileClick }: AgentWorkflowCardProps) {
   const [logsExpanded, setLogsExpanded] = useState(true);
   const [errorsExpanded, setErrorsExpanded] = useState(true);
+  const [filterLevel, setFilterLevel] = useState<LogLevel | "all">("all");
+  const [filterPhase, setFilterPhase] = useState<LogPhase | "all">("all");
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const { toast } = useToast();
 
-  const { status, current_step, progress, logs, files_generated, errors, attempt_count, last_failed_step } = workflowState;
+  const { status, current_step, progress, logs, structuredLogs, files_generated, errors, attempt_count, last_failed_step } = workflowState;
 
   const isProcessing = status === "processing";
   const isComplete = status === "complete";
   const isFailed = status === "failed";
 
-  // Show most recent 10 logs
+  // Show most recent 10 logs (legacy)
   const recentLogs = logs.slice(-10);
+
+  // Filter and group structured logs by phase
+  const filteredStructuredLogs = useMemo(() => {
+    if (!structuredLogs || structuredLogs.length === 0) return [];
+
+    return structuredLogs.filter((log: LogEntryType) => {
+      // Filter by level
+      if (filterLevel !== "all" && log.level !== filterLevel) return false;
+      
+      // Filter by phase
+      if (filterPhase !== "all" && log.phase !== filterPhase) return false;
+      
+      // Filter by keyword
+      if (searchKeyword && !log.message.toLowerCase().includes(searchKeyword.toLowerCase())) {
+        return false;
+      }
+      
+      return true;
+    });
+  }, [structuredLogs, filterLevel, filterPhase, searchKeyword]);
+
+  // Group logs by phase
+  const logsByPhase = useMemo(() => {
+    const grouped = new Map<LogPhase, LogEntryType[]>();
+    
+    filteredStructuredLogs.forEach((log: LogEntryType) => {
+      const existing = grouped.get(log.phase) || [];
+      grouped.set(log.phase, [...existing, log]);
+    });
+    
+    return grouped;
+  }, [filteredStructuredLogs]);
+
+  // Export logs as JSON
+  const handleExportLogs = () => {
+    const data = JSON.stringify(filteredStructuredLogs, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `agent-logs-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    
+    toast({
+      title: "Logs Exported",
+      description: `Exported ${filteredStructuredLogs.length} log entries`,
+    });
+  };
 
   // Define workflow steps in order (only show main workflow steps in timeline)
   const workflowSteps: AgentStep[] = ["planning", "coding", "testing", "complete"];
@@ -198,23 +254,104 @@ export default function AgentWorkflowCard({ workflowState, onFileClick }: AgentW
         </div>
       )}
 
-      {/* Logs (collapsible) */}
-      {recentLogs.length > 0 && (
+      {/* Logs (collapsible) - Phase 2: Structured Logs with Filtering */}
+      {(filteredStructuredLogs.length > 0 || recentLogs.length > 0) && (
         <Collapsible open={logsExpanded} onOpenChange={setLogsExpanded}>
-          <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium hover-elevate active-elevate-2 w-full rounded-md px-2 py-1" data-testid="button-toggle-logs">
-            {logsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            <span>Activity Logs ({recentLogs.length})</span>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-2">
-            <ScrollArea className="h-32 rounded-md border bg-muted/30 p-2">
-              <div className="space-y-1 text-xs font-mono">
-                {recentLogs.map((log, idx) => (
-                  <div key={idx} className="text-foreground/80" data-testid={`log-entry-${idx}`}>
-                    {log}
+          <div className="flex items-center justify-between">
+            <CollapsibleTrigger className="flex items-center gap-2 text-sm font-medium hover-elevate active-elevate-2 rounded-md px-2 py-1" data-testid="button-toggle-logs">
+              {logsExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+              <span>
+                Activity Logs ({filteredStructuredLogs.length > 0 ? filteredStructuredLogs.length : recentLogs.length})
+              </span>
+            </CollapsibleTrigger>
+            
+            {filteredStructuredLogs.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleExportLogs}
+                className="gap-1"
+                data-testid="button-export-logs"
+              >
+                <Download className="w-3 h-3" />
+                Export
+              </Button>
+            )}
+          </div>
+          
+          <CollapsibleContent className="mt-2 space-y-2">
+            {/* Structured Logs (Phase 2) */}
+            {filteredStructuredLogs.length > 0 ? (
+              <>
+                {/* Filter Controls */}
+                <div className="flex flex-wrap gap-2 p-2 bg-muted/30 rounded-md">
+                  <select
+                    value={filterLevel}
+                    onChange={(e) => setFilterLevel(e.target.value as LogLevel | "all")}
+                    className="text-xs px-2 py-1 rounded border bg-background"
+                    data-testid="select-filter-level"
+                  >
+                    <option value="all">All Levels</option>
+                    <option value="info">Info</option>
+                    <option value="success">Success</option>
+                    <option value="warn">Warning</option>
+                    <option value="error">Error</option>
+                    <option value="debug">Debug</option>
+                  </select>
+                  
+                  <select
+                    value={filterPhase}
+                    onChange={(e) => setFilterPhase(e.target.value as LogPhase | "all")}
+                    className="text-xs px-2 py-1 rounded border bg-background"
+                    data-testid="select-filter-phase"
+                  >
+                    <option value="all">All Phases</option>
+                    <option value="system">System</option>
+                    <option value="planning">Planning</option>
+                    <option value="coding">Coding</option>
+                    <option value="testing">Testing</option>
+                    <option value="fixing">Fixing</option>
+                    <option value="package_install">Package Install</option>
+                    <option value="dev_server">Dev Server</option>
+                    <option value="complete">Complete</option>
+                  </select>
+                  
+                  <input
+                    type="text"
+                    placeholder="Search logs..."
+                    value={searchKeyword}
+                    onChange={(e) => setSearchKeyword(e.target.value)}
+                    className="text-xs px-2 py-1 rounded border bg-background flex-1 min-w-32"
+                    data-testid="input-search-logs"
+                  />
+                </div>
+
+                {/* Grouped Logs by Phase */}
+                <ScrollArea className="max-h-96 rounded-md border bg-muted/10 p-2">
+                  <div className="space-y-2">
+                    {Array.from(logsByPhase.entries()).map(([phase, phaseLogs]) => (
+                      <LogPhaseGroup
+                        key={phase}
+                        phase={phase}
+                        logs={phaseLogs}
+                        defaultExpanded={phase === current_step || phaseLogs.some(log => log.level === "error")}
+                      />
+                    ))}
                   </div>
-                ))}
-              </div>
-            </ScrollArea>
+                </ScrollArea>
+              </>
+            ) : (
+              /* Legacy Logs Fallback */
+              <ScrollArea className="h-32 rounded-md border bg-muted/30 p-2">
+                <div className="space-y-1 text-xs font-mono">
+                  {recentLogs.map((log, idx) => (
+                    <div key={idx} className="text-foreground/80" data-testid={`log-entry-${idx}`}>
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            )}
           </CollapsibleContent>
         </Collapsible>
       )}
