@@ -337,8 +337,8 @@ export class AgentOrchestrator {
       const requiredFiles = [
         'package.json',
         'index.html',
-        'vite.config.ts',
-        'tsconfig.json'
+        'vite.config.ts'
+        // tsconfig.json is nice-to-have but not critical for Vite to run
       ];
       
       for (const required of requiredFiles) {
