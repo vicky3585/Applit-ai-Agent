@@ -1,5 +1,6 @@
 import type { AgentContext } from "./types";
 import { withOpenAIRetry } from "../utils/retry";
+import { REACT_VITE_TEMPLATE } from "./templates/react-vite";
 
 export interface CodeGenerationResult {
   files: Array<{
@@ -17,6 +18,75 @@ export class CoderAgent {
   ): Promise<CodeGenerationResult> {
     const { prompt, existingFiles, openai, settings } = context;
 
+    // Detect if this is a React/Vite project (template-based approach)
+    const promptLower = prompt.toLowerCase();
+    const isReactVite = promptLower.includes('react') || promptLower.includes('vite') || 
+                        promptLower.includes('counter') || promptLower.includes('component');
+    
+    if (isReactVite && existingFiles.length === 0) {
+      // Use template for scaffold files, only generate custom components
+      const scaffoldFiles = Object.entries(REACT_VITE_TEMPLATE).map(([path, content]) => ({
+        path,
+        content,
+        language: path.endsWith('.ts') || path.endsWith('.tsx') ? 'typescript' : 
+                  path.endsWith('.json') ? 'json' : 
+                  path.endsWith('.html') ? 'html' : 
+                  path.endsWith('.css') ? 'css' : 'text'
+      }));
+
+      // Ask the model to ONLY generate custom component files (App.tsx, Counter.tsx, etc.)
+      const componentPrompt = `You are generating ONLY custom React component files for: ${prompt}
+
+The project scaffold (package.json, index.html, vite.config.ts, tsconfig.json, src/main.tsx, src/index.css) is already created.
+
+Your task:
+1. Generate ONLY custom component files: src/App.tsx and any additional components mentioned in the request
+2. DO NOT generate package.json, index.html, vite.config.ts, tsconfig.json, or src/main.tsx (they already exist)
+3. Components should be placed in src/ directory
+4. Use TypeScript (.tsx) and functional components with hooks
+5. Include proper imports and exports
+
+Output format - JSON object:
+{
+  "files": [
+    {
+      "path": "src/App.tsx",
+      "content": "complete working code here",
+      "language": "typescript"
+    }
+  ]
+}
+
+${previousError ? `\n⚠️ Previous attempt failed: ${previousError}\nPlease fix and regenerate.` : ""}`;
+
+      try {
+        const response = await withOpenAIRetry(() =>
+          openai.chat.completions.create({
+            model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
+            messages: [
+              { role: "system", content: "You are a React component generator. Generate clean, working TypeScript React components." },
+              { role: "user", content: componentPrompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 2048, // Components only, less tokens needed
+            response_format: { type: "json_object" },
+          })
+        );
+
+        const content = response.choices[0].message.content || "{}";
+        const result = JSON.parse(content) as CodeGenerationResult;
+        
+        // Combine scaffold + generated components
+        return {
+          files: [...scaffoldFiles, ...result.files]
+        };
+      } catch (error: any) {
+        console.error("[Coder] Template-based generation failed:", error);
+        // Fall back to full generation if template approach fails
+      }
+    }
+
+    // Original full-generation approach for non-React or existing projects
     const systemPrompt = `You are a coding agent that generates high-quality code based on execution plans.
 
 Your task:
