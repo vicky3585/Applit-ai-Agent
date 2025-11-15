@@ -57,6 +57,18 @@ A) REACT/VITE PROJECTS (when user mentions React, Vite, or modern frameworks):
        "vite": "^5.0.0"
      }
    }
+   
+   Example vite.config.ts:
+   import { defineConfig } from 'vite';
+   import react from '@vitejs/plugin-react';
+   
+   export default defineConfig({
+     plugins: [react()],
+     server: {
+       port: 3000,
+       host: '0.0.0.0'
+     }
+   });
 
 B) STANDALONE HTML (for simple/static web apps):
    - Generate STANDALONE HTML files with INLINE CSS and JavaScript
@@ -90,6 +102,9 @@ CRITICAL RULES:
 - Use relative paths (e.g., "package.json", "src/App.tsx", "index.html")
 - Ensure code is syntactically correct and runs immediately
 - Do not include explanations outside the JSON
+- ⚠️ ABSOLUTELY NO PLACEHOLDERS: Never use comments like "// code here" or "// content here"
+- ⚠️ GENERATE COMPLETE, WORKING CODE: Every file must contain REAL, EXECUTABLE code
+- ⚠️ vite.config.ts MUST export a proper Vite config object with React plugin
 
 ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError}\n\nPlease fix the issue and regenerate the code.` : ""}`;
 
