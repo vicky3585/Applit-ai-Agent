@@ -162,7 +162,7 @@ export class DevServerManager {
 
       switch (type) {
         case "vite":
-          proc = spawn("npm", ["run", "dev", "--", "--port", port.toString()], {
+          proc = spawn("npm", ["run", "dev", "--", "--port", port.toString(), "--host", "0.0.0.0"], {
             cwd: workspacePath,
             env: { ...process.env, PORT: port.toString() },
             detached: false,
@@ -172,13 +172,13 @@ export class DevServerManager {
         case "node":
           proc = spawn("node", ["index.js"], {
             cwd: workspacePath,
-            env: { ...process.env, PORT: port.toString() },
+            env: { ...process.env, PORT: port.toString(), HOST: "0.0.0.0" },
             detached: false,
           });
           break;
 
         case "python":
-          proc = spawn("python", ["-m", "flask", "run", "--port", port.toString()], {
+          proc = spawn("python", ["-m", "flask", "run", "--host", "0.0.0.0", "--port", port.toString()], {
             cwd: workspacePath,
             env: { ...process.env, FLASK_APP: "app.py", FLASK_ENV: "development" },
             detached: false,

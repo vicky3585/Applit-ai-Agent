@@ -794,7 +794,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "File persistence not enabled" });
       }
 
-      const workspacePath = `/tmp/ide-workspaces/${workspaceId}`;
+      // Get workspace path using FilePersistence helper (ensures directory exists)
+      const workspacePath = await persistence.resolveWorkspacePath(workspaceId);
+      
+      if (!workspacePath) {
+        return res.status(400).json({ error: "Failed to resolve workspace directory" });
+      }
+
       const server = await manager.startServer(workspaceId, workspacePath);
       
       if (!server) {
