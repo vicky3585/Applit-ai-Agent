@@ -69,6 +69,20 @@ A) REACT/VITE PROJECTS (when user mentions React, Vite, or modern frameworks):
        host: '0.0.0.0'
      }
    });
+   
+   Example index.html:
+   <!DOCTYPE html>
+   <html lang="en">
+   <head>
+     <meta charset="UTF-8" />
+     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+     <title>App Title</title>
+   </head>
+   <body>
+     <div id="root"></div>
+     <script type="module" src="/src/main.tsx"></script>
+   </body>
+   </html>
 
 B) STANDALONE HTML (for simple/static web apps):
    - Generate STANDALONE HTML files with INLINE CSS and JavaScript
@@ -96,8 +110,18 @@ Return a JSON object with this structure:
   ]
 }
 
-CRITICAL RULES:
-- For React/Vite projects: MUST include package.json, index.html, vite.config.ts, and src/ files
+CRITICAL RULES FOR REACT/VITE PROJECTS:
+⚠️ You MUST generate ALL of these files in a single response:
+1. package.json - with "devDependencies.vite" (see example above)
+2. index.html - HTML entry point (see example above)
+3. vite.config.ts - Vite configuration with react plugin (see example above)
+4. src/main.tsx - React entry point that renders to #root
+5. src/App.tsx - Main React component
+6. Additional component files as needed
+
+If ANY of these are missing, the project will FAIL validation and you'll be asked to retry!
+
+GENERAL RULES:
 - For standalone HTML: Single .html file with everything inline
 - Use relative paths (e.g., "package.json", "src/App.tsx", "index.html")
 - Ensure code is syntactically correct and runs immediately
