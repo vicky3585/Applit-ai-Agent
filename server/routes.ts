@@ -1029,44 +1029,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
-          // 🎯 AUTO DEV SERVER SPAWN - Phase 1 Feature
-          // Always attempt to start dev server (even on failure, might have existing files)
-          try {
-            const { getDevServerManager } = await import("./dev-server-manager");
-            const devServerManager = getDevServerManager();
-            const workspaceDir = path.join("/tmp/ide-workspaces", workspaceId);
-            
-            result.logs = result.logs || [];
-            result.logs.push("[Auto Dev Server] Detecting project type...");
-            
-            // Start dev server with workspace path (works with existing + new files)
-            const server = await devServerManager.startServer(workspaceId, workspaceDir);
-            
-            if (server) {
-              result.logs.push(`[Auto Dev Server] ✓ Started ${server.type} server on port ${server.port}`);
-              
-              // Broadcast preview URL for auto-refresh
-              wss.clients.forEach((client: any) => {
-                if (client.readyState === 1 && client.workspaceId === workspaceId) {
-                  client.send(JSON.stringify({
-                    type: "preview-refresh",
-                    data: { 
-                      url: server.url,
-                      serverType: server.type,
-                      port: server.port
-                    },
-                  }));
-                }
-              });
-            } else {
-              result.logs.push("[Auto Dev Server] ℹ️ No dev server configuration detected (static files or library)");
-            }
-          } catch (serverError: any) {
-            console.error("[Auto Dev Server] Error:", serverError);
-            result.logs = result.logs || [];
-            result.logs.push(`Dev server error: ${serverError.message}`);
-            // Continue workflow even if server fails to start
-          }
+          // NOTE: Dev server spawning is now handled by the orchestrator AFTER package installation
+          // This ensures packages are installed before trying to start the dev server
+          // (Removed legacy auto dev server code that was causing premature server start)
 
           // Update execution with result
           // IMPORTANT: Manage failure state persistence
