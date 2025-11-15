@@ -123,10 +123,28 @@ export class AgentOrchestrator {
             }
           }
 
-          state.logs.push("[DEBUG] Finished saving files, moving to testing");
+          state.logs.push("[DEBUG] Finished saving files, moving to validation");
           onStateUpdate({ ...state });
 
-          // Step 3: Testing
+          // Step 3: File completeness validation (before testing)
+          const requiredFilesCheck = this.validateRequiredFiles(stringifiedFiles, context.prompt);
+          if (!requiredFilesCheck.passed) {
+            state.logs.push(`[Validator] ❌ Missing required files: ${requiredFilesCheck.missing.join(", ")}`);
+            lastError = `Missing required files: ${requiredFilesCheck.missing.join(", ")}. Please generate ALL files for a complete, runnable project.`;
+            
+            if (state.attemptCount < maxAttempts) {
+              state.logs.push(`[Orchestrator] Retrying with complete file set...`);
+            } else {
+              state.logs.push(`[Orchestrator] Max attempts (${maxAttempts}) reached`);
+              state.errors.push(`Failed after ${maxAttempts} attempts: ${lastError}`);
+            }
+            continue; // Retry code generation
+          }
+          
+          state.logs.push("[Validator] ✅ All required files present");
+          onStateUpdate({ ...state });
+
+          // Step 4: Testing
           state.currentStep = "testing";
           state.progress = 0.7;
           state.logs.push("[Tester] Running validation checks...");
@@ -294,6 +312,74 @@ export class AgentOrchestrator {
       onStateUpdate({ ...state });
       return state;
     }
+  }
+
+  /**
+   * Validate that all required files are present for the project type
+   */
+  private validateRequiredFiles(
+    files: Array<{ path: string; content: string; language?: string }>,
+    prompt: string
+  ): { passed: boolean; missing: string[] } {
+    const fileNames = files.map(f => f.path);
+    const missing: string[] = [];
+    
+    // Detect project type from prompt
+    const promptLower = prompt.toLowerCase();
+    const isReactVite = promptLower.includes('react') || promptLower.includes('vite') || 
+                        promptLower.includes('counter') || promptLower.includes('component');
+    const isNodeBackend = promptLower.includes('server') || promptLower.includes('api') || 
+                          promptLower.includes('express');
+    const isStandaloneHTML = promptLower.includes('html') || promptLower.includes('static');
+    
+    // React/Vite project requirements
+    if (isReactVite && !isStandaloneHTML) {
+      const requiredFiles = [
+        'package.json',
+        'index.html',
+        'vite.config.ts',
+        'tsconfig.json'
+      ];
+      
+      for (const required of requiredFiles) {
+        if (!fileNames.includes(required)) {
+          missing.push(required);
+        }
+      }
+      
+      // Check package.json content
+      const packageJson = files.find(f => f.path === 'package.json');
+      if (packageJson) {
+        try {
+          const pkg = JSON.parse(packageJson.content);
+          if (!pkg.scripts || !pkg.scripts.dev) {
+            missing.push('package.json: "scripts.dev" field');
+          }
+          if (!pkg.devDependencies || !pkg.devDependencies.vite) {
+            missing.push('package.json: "devDependencies.vite" field');
+          }
+        } catch (error) {
+          missing.push('package.json: valid JSON');
+        }
+      }
+    }
+    
+    // Node.js backend requirements
+    if (isNodeBackend && !isReactVite) {
+      const requiredFiles = ['package.json'];
+      for (const required of requiredFiles) {
+        if (!fileNames.includes(required)) {
+          missing.push(required);
+        }
+      }
+    }
+    
+    // Standalone HTML doesn't need validation (single file is OK)
+    
+    return {
+      passed: missing.length === 0,
+      missing
+    };
   }
 
 }
