@@ -23,7 +23,11 @@ export class CoderAgent {
     const isReactVite = promptLower.includes('react') || promptLower.includes('vite') || 
                         promptLower.includes('counter') || promptLower.includes('component');
     
+    console.log(`[Coder] Template detection: isReactVite=${isReactVite}, existingFiles=${existingFiles.length}`);
+    
     if (isReactVite && existingFiles.length === 0) {
+      console.log('[Coder] Using template-based generation for React/Vite project');
+      
       // Use template for scaffold files, only generate custom components
       const scaffoldFiles = Object.entries(REACT_VITE_TEMPLATE).map(([path, content]) => ({
         path,
@@ -33,6 +37,8 @@ export class CoderAgent {
                   path.endsWith('.html') ? 'html' : 
                   path.endsWith('.css') ? 'css' : 'text'
       }));
+      
+      console.log(`[Coder] Created ${scaffoldFiles.length} scaffold files from template`);
 
       // Ask the model to ONLY generate custom component files (App.tsx, Counter.tsx, etc.)
       const componentPrompt = `You are generating ONLY custom React component files for: ${prompt}
@@ -84,14 +90,23 @@ ${previousError ? `\n⚠️ Previous attempt failed: ${previousError}\nFix the e
         const content = response.choices[0].message.content || "{}";
         const result = JSON.parse(content) as CodeGenerationResult;
         
+        console.log(`[Coder] Model generated ${result.files?.length || 0} component files`);
+        
         // Combine scaffold + generated components
+        const combinedFiles = [...scaffoldFiles, ...(result.files || [])];
+        console.log(`[Coder] ✅ Template approach successful: ${combinedFiles.length} total files (${scaffoldFiles.length} scaffold + ${result.files?.length || 0} components)`);
+        
         return {
-          files: [...scaffoldFiles, ...result.files]
+          files: combinedFiles
         };
       } catch (error: any) {
-        console.error("[Coder] Template-based generation failed:", error);
+        console.error("[Coder] ❌ Template-based generation failed:", error.message);
+        console.error("[Coder] Stack:", error.stack);
+        console.error("[Coder] Falling back to full generation approach");
         // Fall back to full generation if template approach fails
       }
+    } else {
+      console.log(`[Coder] Skipping template approach (isReactVite=${isReactVite}, existingFiles=${existingFiles.length})`);
     }
 
     // Original full-generation approach for non-React or existing projects
