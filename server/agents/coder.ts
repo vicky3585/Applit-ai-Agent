@@ -123,7 +123,7 @@ ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError
           }
         ],
         temperature: 0.3,
-        max_tokens: 8000, // Increased to support complete React/Vite projects
+        max_tokens: 4096, // Maximum supported by OpenAI models
         response_format: { type: "json_object" },
       })
     );
