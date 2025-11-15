@@ -45,19 +45,27 @@ Your task:
 3. Components should be placed in src/ directory
 4. Use TypeScript (.tsx) and functional components with hooks
 5. Include proper imports and exports
+6. ⚠️ CRITICAL: Ensure ALL JSX tags are properly closed (every <button> must have </button>, etc.)
+7. ⚠️ Write syntactically correct, runnable code - no placeholders or comments
+
+Code quality requirements:
+- All JSX tags must be properly closed
+- All imports must be valid
+- All functions must be complete
+- No syntax errors whatsoever
 
 Output format - JSON object:
 {
   "files": [
     {
       "path": "src/App.tsx",
-      "content": "complete working code here",
+      "content": "import { useState } from 'react';\n\nfunction App() {\n  const [count, setCount] = useState(0);\n  return (\n    <div>\n      <h1>Counter: {count}</h1>\n      <button onClick={() => setCount(count + 1)}>Increment</button>\n      <button onClick={() => setCount(count - 1)}>Decrement</button>\n    </div>\n  );\n}\n\nexport default App;",
       "language": "typescript"
     }
   ]
 }
 
-${previousError ? `\n⚠️ Previous attempt failed: ${previousError}\nPlease fix and regenerate.` : ""}`;
+${previousError ? `\n⚠️ Previous attempt failed: ${previousError}\nFix the exact error mentioned and regenerate clean, working code.` : ""}`;
 
       try {
         const response = await withOpenAIRetry(() =>
