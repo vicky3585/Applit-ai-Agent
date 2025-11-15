@@ -121,7 +121,7 @@ export class AgentOrchestrator {
           if (testResult.passed) {
             state.logs.push("[Tester] All validation checks passed!");
             
-            // AUTO-START DEV SERVER (Task 3: Auto-Start Dev Server After AI File Generation)
+            // AUTO-INSTALL PACKAGES & START DEV SERVER
             const { ENV_CONFIG } = await import("@shared/environment");
             
             if (!ENV_CONFIG.sandbox.available) {
@@ -131,6 +131,7 @@ export class AgentOrchestrator {
               try {
                 const { getDevServerManager } = await import("../dev-server-manager");
                 const { getFilePersistence } = await import("../file-persistence");
+                const { detectPackages, installPackages } = await import("../package-installer");
                 
                 const manager = getDevServerManager();
                 const persistence = getFilePersistence();
@@ -141,12 +142,44 @@ export class AgentOrchestrator {
                 if (!workspacePath) {
                   state.logs.push("[Orchestrator] Failed to create workspace directory");
                 } else {
-                  // Try to start dev server (non-blocking, don't fail if it doesn't work)
+                  // Step 1: Auto-detect and install packages
+                  state.logs.push("[Orchestrator] Detecting required packages...");
+                  onStateUpdate({ ...state });
+                  
+                  const detectedPackages = detectPackages(state.filesGenerated);
+                  
+                  if (detectedPackages.length > 0) {
+                    state.logs.push(`[Orchestrator] Found ${detectedPackages.length} package(s) to install`);
+                    onStateUpdate({ ...state });
+                    
+                    const installResult = await installPackages(
+                      detectedPackages,
+                      workspacePath,
+                      (message) => {
+                        state.logs.push(`[PackageInstaller] ${message}`);
+                        onStateUpdate({ ...state });
+                      }
+                    );
+                    
+                    if (installResult.success) {
+                      state.logs.push("[Orchestrator] ✅ Package installation complete");
+                    } else {
+                      state.logs.push("[Orchestrator] ⚠️ Some packages failed to install, attempting to continue...");
+                    }
+                  } else {
+                    state.logs.push("[Orchestrator] No packages to install");
+                  }
+                  
+                  onStateUpdate({ ...state });
+                  
+                  // Step 2: Try to start dev server
                   state.logs.push("[Orchestrator] Starting dev server...");
+                  onStateUpdate({ ...state });
+                  
                   const server = await manager.startServer(context.workspaceId, workspacePath);
                   
                   if (server) {
-                    state.logs.push(`[Orchestrator] Dev server running on port ${server.port} (${server.type})`);
+                    state.logs.push(`[Orchestrator] ✅ Dev server running on port ${server.port} (${server.type})`);
                   } else {
                     state.logs.push("[Orchestrator] No dev server configured (static files can still be previewed)");
                   }
