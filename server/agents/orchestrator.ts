@@ -101,11 +101,6 @@ export class AgentOrchestrator {
           );
           state.filesGenerated = codeResult.files;
           state.logs.push(`[Coder] Generated ${codeResult.files.length} file(s)`);
-          codeResult.files.forEach((f: { path: string }) => {
-            state.logs.push(`  - ${f.path}`);
-          });
-          
-          state.logs.push("[DEBUG] About to save files to storage");
           onStateUpdate({ ...state });
           
           // Stringify JSON objects FIRST (before saving and testing)
@@ -123,11 +118,9 @@ export class AgentOrchestrator {
           
           // Save stringified files to storage and disk
           const filePersistence = getFilePersistence();
-          state.logs.push(`[DEBUG] About to save ${stringifiedFiles.length} files to storage`);
+          state.logs.push(`[Orchestrator] Saving ${stringifiedFiles.length} file(s)...`);
           
           for (const file of stringifiedFiles) {
-            state.logs.push(`[DEBUG] Saving ${file.path} to storage...`);
-            
             try {
               await this.storage.createFile(
                 context.workspaceId,
@@ -135,33 +128,22 @@ export class AgentOrchestrator {
                 file.content,
                 file.language || "plaintext"
               );
-              state.logs.push(`[DEBUG] ✓ Saved ${file.path} to storage`);
             } catch (error: any) {
               state.logs.push(`[ERROR] Failed to save ${file.path} to storage: ${error.message}`);
             }
             
             // Also save to disk for preview
             try {
-              state.logs.push(`[DEBUG] Saving ${file.path} to disk...`);
               await filePersistence.saveFile(context.workspaceId, file.path, file.content);
-              state.logs.push(`[DEBUG] ✓ Saved ${file.path} to disk`);
             } catch (error: any) {
-              state.logs.push(`[Warning] Could not save to disk: ${file.path}`);
-              state.logs.push(`[ERROR] Disk save error: ${error.message}`);
+              state.logs.push(`[Warning] Could not save ${file.path} to disk: ${error.message}`);
             }
           }
           
-          state.logs.push(`[DEBUG] Finished saving all files`);
-
-          state.logs.push("[DEBUG] Finished saving files, moving to validation");
-          onStateUpdate({ ...state });
-
-          state.logs.push(`[DEBUG] About to call validateRequiredFiles with ${stringifiedFiles.length} files`);
+          state.logs.push(`[Orchestrator] ✅ All files saved successfully`);
           
           // Step 3: File completeness validation (before testing)
           const requiredFilesCheck = this.validateRequiredFiles(stringifiedFiles, context.prompt);
-          
-          state.logs.push(`[DEBUG] Validation result: passed=${requiredFilesCheck.passed}, missing=${requiredFilesCheck.missing.join(', ')}`);
           if (!requiredFilesCheck.passed) {
             state.logs.push(`[Validator] ❌ Missing required files: ${requiredFilesCheck.missing.join(", ")}`);
             lastError = `Missing required files: ${requiredFilesCheck.missing.join(", ")}. Please generate ALL files for a complete, runnable project.`;
@@ -189,25 +171,17 @@ export class AgentOrchestrator {
             TIMEOUT_CONFIGS.AGENT_TEST
           );
           state.testResults = testResult;
-
-          state.logs.push(`[DEBUG] testResult.passed = ${testResult.passed}`);
-          state.logs.push(`[DEBUG] About to check if test passed...`);
           
           if (testResult.passed) {
-            state.logs.push("[Tester] All validation checks passed!");
-            state.logs.push("[DEBUG] Inside testResult.passed block");
+            state.logs.push("[Tester] ✅ All validation checks passed!");
             
             // AUTO-INSTALL PACKAGES & START DEV SERVER
             const { ENV_CONFIG } = await import("@shared/environment");
-            
-            state.logs.push(`[DEBUG] Imported ENV_CONFIG, sandbox.available = ${ENV_CONFIG.sandbox.available}`);
-            state.logs.push(`[DEBUG] ENV_CONFIG.env = ${ENV_CONFIG.env}`);
             
             if (!ENV_CONFIG.sandbox.available) {
               state.logs.push("[Orchestrator] Dev server auto-start unavailable (requires Docker/local environment)");
               state.logs.push("[Orchestrator] Application ready - start dev server manually in Terminal");
             } else {
-              state.logs.push("[DEBUG] Entering package installation block");
               try {
                 const { getDevServerManager } = await import("../dev-server-manager");
                 const { getFilePersistence } = await import("../file-persistence");
