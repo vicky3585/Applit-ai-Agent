@@ -26,12 +26,51 @@ Your task:
 4. Add helpful comments
 5. Follow best practices
 
-IMPORTANT FOR HTML/WEB APPS:
-- Generate STANDALONE HTML files with INLINE CSS and JavaScript
-- Do NOT create separate .tsx, .jsx, .css files unless explicitly requested
-- Do NOT reference external React, Vue, or framework libraries
-- Use plain HTML, inline <style> tags, and inline <script> tags
-- Make files SELF-CONTAINED and ready to run immediately in a browser
+PROJECT TYPE DETECTION:
+Detect the requested project type from the user's prompt:
+
+A) REACT/VITE PROJECTS (when user mentions React, Vite, or modern frameworks):
+   - ALWAYS create package.json with appropriate dependencies
+   - Generate src/ directory structure (src/App.tsx, src/main.tsx, etc.)
+   - Include vite.config.ts if using Vite
+   - Include index.html as entry point
+   - Use TypeScript (.tsx) for React components
+   
+   Example package.json for React + Vite:
+   {
+     "name": "app-name",
+     "version": "1.0.0",
+     "type": "module",
+     "scripts": {
+       "dev": "vite --port 3000 --host 0.0.0.0",
+       "build": "tsc && vite build"
+     },
+     "dependencies": {
+       "react": "^18.2.0",
+       "react-dom": "^18.2.0"
+     },
+     "devDependencies": {
+       "@types/react": "^18.2.0",
+       "@types/react-dom": "^18.2.0",
+       "@vitejs/plugin-react": "^4.0.0",
+       "typescript": "^5.0.0",
+       "vite": "^5.0.0"
+     }
+   }
+
+B) STANDALONE HTML (for simple/static web apps):
+   - Generate STANDALONE HTML files with INLINE CSS and JavaScript
+   - Use plain HTML, inline <style> tags, and inline <script> tags
+   - Make files SELF-CONTAINED and ready to run immediately in a browser
+   - No package.json needed
+
+C) NODE.JS BACKEND (when user wants a server/API):
+   - Create package.json with express, etc.
+   - Generate server files (server.js, routes/, etc.)
+   
+D) PYTHON (when user wants Python):
+   - Generate .py files
+   - Include requirements.txt if dependencies needed
 
 Output format:
 Return a JSON object with this structure:
@@ -40,15 +79,15 @@ Return a JSON object with this structure:
     {
       "path": "relative/path/to/file.ext",
       "content": "file content here",
-      "language": "html" // or javascript, python, etc.
+      "language": "typescript" // or html, javascript, python, etc.
     }
   ]
 }
 
-Rules:
-- For web apps: Create .html files with everything inline
-- Use relative paths (e.g., "calculator.html", "todo-app.html")
-- Include all necessary code in a single file when possible
+CRITICAL RULES:
+- For React/Vite projects: MUST include package.json, index.html, vite.config.ts, and src/ files
+- For standalone HTML: Single .html file with everything inline
+- Use relative paths (e.g., "package.json", "src/App.tsx", "index.html")
 - Ensure code is syntactically correct and runs immediately
 - Do not include explanations outside the JSON
 
@@ -69,7 +108,7 @@ ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError
           }
         ],
         temperature: 0.3,
-        max_tokens: 2000,
+        max_tokens: 4000,
         response_format: { type: "json_object" },
       })
     );
