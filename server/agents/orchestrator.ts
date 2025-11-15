@@ -156,8 +156,12 @@ export class AgentOrchestrator {
           state.logs.push("[DEBUG] Finished saving files, moving to validation");
           onStateUpdate({ ...state });
 
+          state.logs.push(`[DEBUG] About to call validateRequiredFiles with ${stringifiedFiles.length} files`);
+          
           // Step 3: File completeness validation (before testing)
           const requiredFilesCheck = this.validateRequiredFiles(stringifiedFiles, context.prompt);
+          
+          state.logs.push(`[DEBUG] Validation result: passed=${requiredFilesCheck.passed}, missing=${requiredFilesCheck.missing.join(', ')}`);
           if (!requiredFilesCheck.passed) {
             state.logs.push(`[Validator] ❌ Missing required files: ${requiredFilesCheck.missing.join(", ")}`);
             lastError = `Missing required files: ${requiredFilesCheck.missing.join(", ")}. Please generate ALL files for a complete, runnable project.`;
