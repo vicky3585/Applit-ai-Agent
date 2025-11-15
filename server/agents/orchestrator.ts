@@ -91,18 +91,26 @@ export class AgentOrchestrator {
           // Save generated files to storage and disk
           const filePersistence = getFilePersistence();
           for (const file of codeResult.files) {
+            // Fix: Stringify JSON objects (especially package.json)
+            let content = file.content;
+            if (typeof content === 'object' && content !== null) {
+              content = JSON.stringify(content, null, 2);
+              state.logs.push(`[Orchestrator] Stringified JSON object for ${file.path}`);
+            }
+            
             await this.storage.createFile(
               context.workspaceId,
               file.path,
-              file.content,
+              content,
               file.language || "plaintext"
             );
             
             // Also save to disk for preview
             try {
-              await filePersistence.saveFile(context.workspaceId, file.path, file.content);
+              await filePersistence.saveFile(context.workspaceId, file.path, content);
             } catch (error: any) {
               state.logs.push(`[Warning] Could not save to disk: ${file.path}`);
+              state.logs.push(`[Orchestrator] Full error: ${error.message}`);
             }
           }
 
