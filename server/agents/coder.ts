@@ -38,34 +38,42 @@ export class CoderAgent {
                   path.endsWith('.css') ? 'css' : 'text'
       }));
       
-      console.log(`[Coder] Created ${scaffoldFiles.length} scaffold files from template`);
+      console.log(`[Coder] Created ${scaffoldFiles.length} scaffold files from template (includes working App.tsx)`);
 
-      // Ask the model to ONLY generate custom component files (App.tsx, Counter.tsx, etc.)
-      const componentPrompt = `You are generating ONLY custom React component files for: ${prompt}
+      // Check if user wants custom components beyond the default App.tsx
+      const needsCustomComponents = promptLower.includes('component') && 
+        !promptLower.match(/simple|basic|quick/);
+      
+      if (!needsCustomComponents) {
+        console.log('[Coder] Using default App.tsx from template (sufficient for simple counter)');
+        return { files: scaffoldFiles };
+      }
 
-The project scaffold (package.json, index.html, vite.config.ts, tsconfig.json, src/main.tsx, src/index.css) is already created.
+      console.log('[Coder] Generating additional custom components...');
+      
+      // Ask the model to ONLY generate additional custom component files
+      const componentPrompt = `You are generating ONLY additional React component files for: ${prompt}
+
+The project scaffold is already created with:
+- package.json, index.html, vite.config.ts, tsconfig.json (✓ Already exists)
+- src/main.tsx, src/index.css (✓ Already exists)  
+- src/App.tsx with working counter functionality (✓ Already exists)
 
 Your task:
-1. Generate ONLY custom component files: src/App.tsx and any additional components mentioned in the request
-2. DO NOT generate package.json, index.html, vite.config.ts, tsconfig.json, or src/main.tsx (they already exist)
-3. Components should be placed in src/ directory
+1. Generate ONLY additional custom components if explicitly mentioned in the request
+2. DO NOT regenerate App.tsx - it already exists with counter functionality
+3. Place new components in src/ directory (e.g., src/Counter.tsx, src/Button.tsx)
 4. Use TypeScript (.tsx) and functional components with hooks
-5. Include proper imports and exports
-6. ⚠️ CRITICAL: Ensure ALL JSX tags are properly closed (every <button> must have </button>, etc.)
-7. ⚠️ Write syntactically correct, runnable code - no placeholders or comments
+5. Ensure proper imports and exports
+6. ⚠️ CRITICAL: All JSX tags must be properly closed
+7. Write syntactically correct code - no placeholders
 
-Code quality requirements:
-- All JSX tags must be properly closed
-- All imports must be valid
-- All functions must be complete
-- No syntax errors whatsoever
-
-Output format - JSON object:
+Output format - JSON object with additional components only:
 {
   "files": [
     {
-      "path": "src/App.tsx",
-      "content": "import { useState } from 'react';\n\nfunction App() {\n  const [count, setCount] = useState(0);\n  return (\n    <div>\n      <h1>Counter: {count}</h1>\n      <button onClick={() => setCount(count + 1)}>Increment</button>\n      <button onClick={() => setCount(count - 1)}>Decrement</button>\n    </div>\n  );\n}\n\nexport default App;",
+      "path": "src/CustomComponent.tsx",
+      "content": "complete working code here",
       "language": "typescript"
     }
   ]
@@ -73,38 +81,31 @@ Output format - JSON object:
 
 ${previousError ? `\n⚠️ Previous attempt failed: ${previousError}\nFix the exact error mentioned and regenerate clean, working code.` : ""}`;
 
-      try {
-        const response = await withOpenAIRetry(() =>
-          openai.chat.completions.create({
-            model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
-            messages: [
-              { role: "system", content: "You are a React component generator. Generate clean, working TypeScript React components." },
-              { role: "user", content: componentPrompt }
-            ],
-            temperature: 0.3,
-            max_tokens: 2048, // Components only, less tokens needed
-            response_format: { type: "json_object" },
-          })
-        );
+      const response = await withOpenAIRetry(() =>
+        openai.chat.completions.create({
+          model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
+          messages: [
+            { role: "system", content: "You are a React component generator. Generate clean, working TypeScript React components." },
+            { role: "user", content: componentPrompt }
+          ],
+          temperature: 0.3,
+          max_tokens: 2048,
+          response_format: { type: "json_object" },
+        })
+      );
 
-        const content = response.choices[0].message.content || "{}";
-        const result = JSON.parse(content) as CodeGenerationResult;
-        
-        console.log(`[Coder] Model generated ${result.files?.length || 0} component files`);
-        
-        // Combine scaffold + generated components
-        const combinedFiles = [...scaffoldFiles, ...(result.files || [])];
-        console.log(`[Coder] ✅ Template approach successful: ${combinedFiles.length} total files (${scaffoldFiles.length} scaffold + ${result.files?.length || 0} components)`);
-        
-        return {
-          files: combinedFiles
-        };
-      } catch (error: any) {
-        console.error("[Coder] ❌ Template-based generation failed:", error.message);
-        console.error("[Coder] Stack:", error.stack);
-        console.error("[Coder] Falling back to full generation approach");
-        // Fall back to full generation if template approach fails
-      }
+      const content = response.choices[0].message.content || "{}";
+      const result = JSON.parse(content) as CodeGenerationResult;
+      
+      console.log(`[Coder] Model generated ${result.files?.length || 0} component files`);
+      
+      // Combine scaffold + generated components
+      const combinedFiles = [...scaffoldFiles, ...(result.files || [])];
+      console.log(`[Coder] ✅ Template approach: ${combinedFiles.length} total files (${scaffoldFiles.length} scaffold + ${result.files?.length || 0} components)`);
+      
+      return {
+        files: combinedFiles
+      };
     } else {
       console.log(`[Coder] Skipping template approach (isReactVite=${isReactVite}, existingFiles=${existingFiles.length})`);
     }

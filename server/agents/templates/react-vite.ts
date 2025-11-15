@@ -114,6 +114,40 @@ body {
 #root {
   width: 100%;
   max-width: 600px;
+}`,
+
+  "src/App.tsx": `import { useState } from 'react';
+
+function App() {
+  const [count, setCount] = useState(0);
+
+  return (
+    <div style={{ textAlign: 'center', padding: '2rem', background: 'white', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+      <h1 style={{ fontSize: '2rem', marginBottom: '1rem', color: '#333' }}>Counter App</h1>
+      <p style={{ fontSize: '3rem', fontWeight: 'bold', margin: '1rem 0', color: '#667eea' }}>{count}</p>
+      <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+        <button 
+          onClick={() => setCount(count + 1)}
+          style={{ padding: '0.75rem 1.5rem', fontSize: '1rem', background: '#667eea', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          Increment
+        </button>
+        <button 
+          onClick={() => setCount(count - 1)}
+          style={{ padding: '0.75rem 1.5rem', fontSize: '1rem', background: '#764ba2', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          Decrement
+        </button>
+        <button 
+          onClick={() => setCount(0)}
+          style={{ padding: '0.75rem 1.5rem', fontSize: '1rem', background: '#6b7280', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+  );
 }
-`
+
+export default App;`
 };
