@@ -78,7 +78,7 @@ export class AgentOrchestrator {
         onStateUpdate({ ...state });
 
         try {
-          const codeResult = await withTimeout(
+          const codeResult: { files: Array<{ path: string; content: any; language?: string }> } = await withTimeout(
             this.coderAgent.generateCode(context, plan, lastError),
             TIMEOUT_CONFIGS.AGENT_CODE
           );
@@ -91,26 +91,32 @@ export class AgentOrchestrator {
           state.logs.push("[DEBUG] About to save files to storage");
           onStateUpdate({ ...state });
           
-          // Save generated files to storage and disk
-          const filePersistence = getFilePersistence();
-          for (const file of codeResult.files) {
-            // Fix: Stringify JSON objects (especially package.json)
+          // Stringify JSON objects FIRST (before saving and testing)
+          const stringifiedFiles = codeResult.files.map((file: { path: string; content: any; language?: string }) => {
             let content = file.content;
             if (typeof content === 'object' && content !== null) {
               content = JSON.stringify(content, null, 2);
               state.logs.push(`[Orchestrator] Stringified JSON object for ${file.path}`);
             }
-            
+            return { ...file, content };
+          });
+          
+          // Update state with stringified files
+          state.filesGenerated = stringifiedFiles;
+          
+          // Save stringified files to storage and disk
+          const filePersistence = getFilePersistence();
+          for (const file of stringifiedFiles) {
             await this.storage.createFile(
               context.workspaceId,
               file.path,
-              content,
+              file.content,
               file.language || "plaintext"
             );
             
             // Also save to disk for preview
             try {
-              await filePersistence.saveFile(context.workspaceId, file.path, content);
+              await filePersistence.saveFile(context.workspaceId, file.path, file.content);
             } catch (error: any) {
               state.logs.push(`[Warning] Could not save to disk: ${file.path}`);
               state.logs.push(`[Orchestrator] Full error: ${error.message}`);
@@ -126,8 +132,8 @@ export class AgentOrchestrator {
           state.logs.push("[Tester] Running validation checks...");
           onStateUpdate({ ...state });
 
-          const testResult = await withTimeout(
-            this.testerAgent.validateCode(context, state.filesGenerated),
+          const testResult: { passed: boolean; error?: string; details?: any } = await withTimeout(
+            this.testerAgent.validateCode(context, stringifiedFiles),
             TIMEOUT_CONFIGS.AGENT_TEST
           );
           state.testResults = testResult;
