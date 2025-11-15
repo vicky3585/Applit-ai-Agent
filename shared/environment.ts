@@ -4,6 +4,17 @@
  * Detects whether running on Replit or local Ubuntu and configures services accordingly.
  */
 
+// Load .env file BEFORE environment detection (Node.js 20.12+ native support)
+// This must happen before ENV_CONFIG is created
+if (typeof window === "undefined") {
+  try {
+    process.loadEnvFile('.env');
+    console.log('[Environment] Loaded .env file, DEPLOYMENT_ENV =', process.env.DEPLOYMENT_ENV);
+  } catch (error: any) {
+    console.log('[Environment] Could not load .env file:', error.message);
+  }
+}
+
 export type Environment = "replit" | "local";
 export type ServiceMode = "replit" | "docker" | "mock";
 
@@ -40,14 +51,14 @@ export interface EnvironmentConfig {
  * Detect current environment
  */
 export function detectEnvironment(): Environment {
-  // Check for Replit-specific environment variables
-  if (process.env.REPL_ID || process.env.REPL_SLUG) {
-    return "replit";
-  }
-  
-  // Check for local Ubuntu indicators
+  // Priority 1: Explicit override via DEPLOYMENT_ENV
   if (process.env.DEPLOYMENT_ENV === "local") {
     return "local";
+  }
+  
+  // Priority 2: Check for Replit-specific environment variables
+  if (process.env.REPL_ID || process.env.REPL_SLUG) {
+    return "replit";
   }
   
   // Default to local for development
