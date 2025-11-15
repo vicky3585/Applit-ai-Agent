@@ -2055,8 +2055,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     proxies.push({ path: "/code-server", proxy: codeServerProxy });
   }
 
-  // Live preview proxy for running web apps (port 3000 in sandbox)
-  if (ENV_CONFIG.sandbox.mode === "docker") {
+  // Live preview proxy - DISABLED on local Ubuntu (uses dynamic per-workspace proxy instead)
+  // The dynamic proxy at line 702 handles /preview/:workspaceId correctly
+  if (ENV_CONFIG.env === "replit" && ENV_CONFIG.sandbox.mode === "docker") {
     console.log("[Proxy] Setting up live preview proxy to sandbox:3000");
     
     const previewProxy = createProxyMiddleware({
