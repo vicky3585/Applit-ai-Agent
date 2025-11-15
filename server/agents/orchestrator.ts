@@ -106,22 +106,35 @@ export class AgentOrchestrator {
           
           // Save stringified files to storage and disk
           const filePersistence = getFilePersistence();
+          state.logs.push(`[DEBUG] About to save ${stringifiedFiles.length} files to storage`);
+          
           for (const file of stringifiedFiles) {
-            await this.storage.createFile(
-              context.workspaceId,
-              file.path,
-              file.content,
-              file.language || "plaintext"
-            );
+            state.logs.push(`[DEBUG] Saving ${file.path} to storage...`);
+            
+            try {
+              await this.storage.createFile(
+                context.workspaceId,
+                file.path,
+                file.content,
+                file.language || "plaintext"
+              );
+              state.logs.push(`[DEBUG] ✓ Saved ${file.path} to storage`);
+            } catch (error: any) {
+              state.logs.push(`[ERROR] Failed to save ${file.path} to storage: ${error.message}`);
+            }
             
             // Also save to disk for preview
             try {
+              state.logs.push(`[DEBUG] Saving ${file.path} to disk...`);
               await filePersistence.saveFile(context.workspaceId, file.path, file.content);
+              state.logs.push(`[DEBUG] ✓ Saved ${file.path} to disk`);
             } catch (error: any) {
               state.logs.push(`[Warning] Could not save to disk: ${file.path}`);
-              state.logs.push(`[Orchestrator] Full error: ${error.message}`);
+              state.logs.push(`[ERROR] Disk save error: ${error.message}`);
             }
           }
+          
+          state.logs.push(`[DEBUG] Finished saving all files`);
 
           state.logs.push("[DEBUG] Finished saving files, moving to validation");
           onStateUpdate({ ...state });
