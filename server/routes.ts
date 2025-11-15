@@ -1169,10 +1169,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create generated files
         if (result.filesGenerated && result.filesGenerated.length > 0) {
           for (const file of result.filesGenerated) {
+            // Fix: Stringify JSON objects (especially package.json)
+            let content = file.content;
+            if (typeof content === 'object' && content !== null) {
+              content = JSON.stringify(content, null, 2);
+              console.log(`[Routes] Stringified JSON object for ${file.path}`);
+            }
+            
             await storage.createFile(
               workspaceId,
               file.path,
-              file.content,
+              content,
               file.language || "plaintext"
             );
             
