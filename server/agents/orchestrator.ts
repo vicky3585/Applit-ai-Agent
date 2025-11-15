@@ -126,16 +126,21 @@ export class AgentOrchestrator {
           );
           state.testResults = testResult;
 
+          state.logs.push(`[DEBUG] testResult.passed = ${testResult.passed}`);
+          
           if (testResult.passed) {
             state.logs.push("[Tester] All validation checks passed!");
             
             // AUTO-INSTALL PACKAGES & START DEV SERVER
             const { ENV_CONFIG } = await import("@shared/environment");
             
+            state.logs.push(`[DEBUG] ENV_CONFIG.sandbox.available = ${ENV_CONFIG.sandbox.available}`);
+            
             if (!ENV_CONFIG.sandbox.available) {
               state.logs.push("[Orchestrator] Dev server auto-start unavailable (requires Docker/local environment)");
               state.logs.push("[Orchestrator] Application ready - start dev server manually in Terminal");
             } else {
+              state.logs.push("[DEBUG] Entering package installation block");
               try {
                 const { getDevServerManager } = await import("../dev-server-manager");
                 const { getFilePersistence } = await import("../file-persistence");

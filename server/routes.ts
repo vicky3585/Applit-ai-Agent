@@ -988,7 +988,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Only install packages if files were generated
             try {
               const { autoInstallPackages } = await import("./package-installer");
-              const workspaceDir = path.join(process.cwd(), "workspaces", workspaceId);
+              const workspaceDir = path.join("/tmp/ide-workspaces", workspaceId);
               
               const installResult = await autoInstallPackages(
                 result.files_generated,
@@ -1034,7 +1034,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             const { getDevServerManager } = await import("./dev-server-manager");
             const devServerManager = getDevServerManager();
-            const workspaceDir = path.join(process.cwd(), "workspaces", workspaceId);
+            const workspaceDir = path.join("/tmp/ide-workspaces", workspaceId);
             
             result.logs = result.logs || [];
             result.logs.push("[Auto Dev Server] Detecting project type...");
