@@ -160,5 +160,9 @@ export class FileSync {
   }
 }
 
-// Export singleton instance
-export const fileSync = new FileSync();
+// Export singleton instance with correct workspace root
+// Match FilePersistence path: /tmp/ide-workspaces for local, TMPDIR or fallback for Replit
+const workspaceRoot = ENV_CONFIG.env === "local"
+  ? "/tmp/ide-workspaces"
+  : process.env.TMPDIR || "/tmp/ide-workspaces";
+export const fileSync = new FileSync(workspaceRoot);
