@@ -88,6 +88,9 @@ export class AgentOrchestrator {
             state.logs.push(`  - ${f.path}`);
           });
           
+          state.logs.push("[DEBUG] About to save files to storage");
+          onStateUpdate({ ...state });
+          
           // Save generated files to storage and disk
           const filePersistence = getFilePersistence();
           for (const file of codeResult.files) {
@@ -113,6 +116,9 @@ export class AgentOrchestrator {
               state.logs.push(`[Orchestrator] Full error: ${error.message}`);
             }
           }
+
+          state.logs.push("[DEBUG] Finished saving files, moving to testing");
+          onStateUpdate({ ...state });
 
           // Step 3: Testing
           state.currentStep = "testing";
