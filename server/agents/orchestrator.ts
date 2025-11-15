@@ -51,6 +51,23 @@ export class AgentOrchestrator {
       state.logs.push(`[Orchestrator] Model: ${context.settings?.modelProvider || 'openai'}`);
       onStateUpdate({ ...state });
 
+      // Step 0: Clear existing files for React/Vite projects (template needs clean slate)
+      const promptLower = context.prompt.toLowerCase();
+      const isReactVite = promptLower.includes('react') || promptLower.includes('vite') || 
+                          promptLower.includes('counter') || promptLower.includes('component');
+      
+      if (isReactVite) {
+        state.logs.push("[Orchestrator] Clearing existing files for fresh template generation...");
+        const existingFiles = await this.storage.getFilesByWorkspace(context.workspaceId);
+        for (const file of existingFiles) {
+          await this.storage.deleteFile(file.id);
+        }
+        state.logs.push(`[Orchestrator] Cleared ${existingFiles.length} existing file(s)`);
+        // Update context to reflect empty file list
+        context.existingFiles = [];
+        onStateUpdate({ ...state });
+      }
+
       // Step 1: Planning
       state.currentStep = "planning";
       state.progress = 0.1;
