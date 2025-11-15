@@ -176,12 +176,12 @@ function filterBuiltInPackages(packages: string[], type: "npm" | "pip" | "apt"):
 }
 
 /**
- * Check if package is already installed
+ * Check if package is already installed in the workspace directory
  */
-async function isPackageInstalled(packageName: string, type: "npm" | "pip"): Promise<boolean> {
+async function isPackageInstalled(packageName: string, type: "npm" | "pip", workspaceDir: string): Promise<boolean> {
   try {
     if (type === "npm") {
-      const { stdout } = await execAsync(`npm list ${packageName} --depth=0`);
+      const { stdout } = await execAsync(`npm list ${packageName} --depth=0`, { cwd: workspaceDir });
       return stdout.includes(packageName);
     } else if (type === "pip") {
       const { stdout } = await execAsync(`pip show ${packageName}`);
@@ -227,7 +227,7 @@ export async function installPackages(
     // Filter already installed
     const toInstall: string[] = [];
     for (const pkg of npmPackages) {
-      const installed = await isPackageInstalled(pkg, "npm");
+      const installed = await isPackageInstalled(pkg, "npm", workspaceDir);
       if (!installed) {
         toInstall.push(pkg);
       } else {
@@ -306,7 +306,7 @@ export async function installPackages(
     
     const toInstall: string[] = [];
     for (const pkg of pipPackages) {
-      const installed = await isPackageInstalled(pkg, "pip");
+      const installed = await isPackageInstalled(pkg, "pip", workspaceDir);
       if (!installed) {
         toInstall.push(pkg);
       } else {
