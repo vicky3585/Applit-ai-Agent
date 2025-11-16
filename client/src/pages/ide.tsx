@@ -675,6 +675,32 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
     }
   };
 
+  const handleExportWorkspace = async () => {
+    try {
+      // Trigger download by navigating to the export endpoint
+      const exportUrl = `/api/workspaces/${workspaceId}/export`;
+      
+      // Create a temporary link and trigger download
+      const link = document.createElement('a');
+      link.href = exportUrl;
+      link.download = `workspace-${workspaceId}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast({
+        title: "Exporting workspace",
+        description: "Your workspace is being downloaded as a ZIP file",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Export failed",
+        description: error.message || "Failed to export workspace",
+        variant: "destructive",
+      });
+    }
+  };
+
   // Task 7.10: Follow mode controller
   const handleUserClick = (userId: string) => {
     // Can't follow yourself
@@ -844,6 +870,7 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
         onGitHub={() => setGithubBrowserOpen(true)}
         onPackages={() => setPackagesOpen(true)}
         onSettings={() => setSettingsOpen(true)}
+        onExport={handleExportWorkspace}
         followingUserName={followingUserId ? workspaceUsers.find(u => u.userId === followingUserId)?.name : null}
         onStopFollowing={() => setFollowingUserId(null)}
       />

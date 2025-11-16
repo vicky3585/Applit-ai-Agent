@@ -1,4 +1,4 @@
-import { Code2, Play, Pause, RotateCcw, Settings, Moon, Sun, Package, Sparkles, Github, ChevronDown, LayoutDashboard, FolderOpen } from "lucide-react";
+import { Code2, Play, Pause, RotateCcw, Settings, Moon, Sun, Package, Sparkles, Github, ChevronDown, LayoutDashboard, FolderOpen, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -25,6 +25,7 @@ interface TopBarProps {
   onPackages?: () => void;
   onTemplates?: () => void;
   onGitHub?: () => void;
+  onExport?: () => void;
   followingUserName?: string | null;
   onStopFollowing?: () => void;
 }
@@ -40,6 +41,7 @@ export default function TopBar({
   onPackages,
   onTemplates,
   onGitHub,
+  onExport,
   followingUserName,
   onStopFollowing,
 }: TopBarProps) {
@@ -212,6 +214,16 @@ export default function TopBar({
           data-testid="button-github"
         >
           <Github className="w-4 h-4" />
+        </Button>
+        
+        <Button 
+          size="icon" 
+          variant="ghost"
+          onClick={onExport}
+          title="Export workspace as ZIP"
+          data-testid="button-export"
+        >
+          <Download className="w-4 h-4" />
         </Button>
         
         <Button 

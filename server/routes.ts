@@ -1017,6 +1017,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Export workspace as ZIP file
+  app.get("/api/workspaces/:id/export", ...requireWorkspaceAccess, async (req, res) => {
+    const workspaceId = req.params.id;
+    
+    try {
+      const archiver = (await import("archiver")).default;
+      
+      // Get all files for the workspace
+      const files = await storageInstance.getFilesByWorkspace(workspaceId);
+      
+      if (files.length === 0) {
+        return res.status(404).json({ error: "No files to export" });
+      }
+      
+      // Set response headers for ZIP download
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="workspace-${workspaceId}.zip"`);
+      
+      // Create archiver instance
+      const archive = archiver('zip', {
+        zlib: { level: 9 } // Maximum compression
+      });
+      
+      // Handle archiver errors
+      archive.on('error', (err) => {
+        console.error('[Export] Archive error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to create ZIP archive' });
+        }
+      });
+      
+      // Pipe archive data to response
+      archive.pipe(res);
+      
+      // Add each file to the archive
+      for (const file of files) {
+        archive.append(file.content, { name: file.path });
+      }
+      
+      // Finalize the archive (no more files will be added)
+      await archive.finalize();
+      
+      console.log(`[Export] Exported ${files.length} files for workspace ${workspaceId}`);
+    } catch (error: any) {
+      console.error(`[Export] Error exporting workspace:`, error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Failed to export workspace" });
+      }
+    }
+  });
+
   // Task 4: Dev Server Proxy - Only proxy when dev server exists
   // Fix 2: Only create and invoke proxy when dev server is running
   app.use("/preview/:workspaceId", async (req: any, res: any, next: any) => {
