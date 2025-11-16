@@ -148,6 +148,7 @@ export class StructuredLogger {
       testing: [],
       fixing: [],
       package_install: [],
+      command_execution: [],
       dev_server: [],
       complete: [],
     };

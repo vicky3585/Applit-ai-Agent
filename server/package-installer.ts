@@ -244,11 +244,29 @@ export async function installPackages(
     if (toInstall.length > 0) {
       onProgress?.(`⏳ Installing ${toInstall.length} npm package(s): ${toInstall.join(", ")}`);
       
+      const command = `npm install ${toInstall.join(" ")}`;
+      
+      // Log command execution start
+      result.structuredLogs.push(StructuredLogger.info("command_execution", `Executing: ${command}`, {
+        command,
+        cwd: workspaceDir,
+        packageManager: "npm",
+        packages: toInstall,
+      }));
+      
       try {
         const { stdout, stderr } = await execAsync(
-          `npm install ${toInstall.join(" ")}`,
+          command,
           { cwd: workspaceDir, timeout: 120000 } // 2 min timeout
         );
+        
+        // Log command execution success
+        result.structuredLogs.push(StructuredLogger.success("command_execution", `Command completed successfully: ${command}`, {
+          command,
+          stdout: stdout.trim(),
+          stderr: stderr?.trim(),
+          exitCode: 0,
+        }));
         
         result.packagesInstalled.push(...toInstall);
         const successMsg = `Successfully installed: ${toInstall.join(", ")}`;
@@ -274,6 +292,14 @@ export async function installPackages(
         
         onProgress?.(`✅ Installed ${toInstall.length} npm package(s)`);
       } catch (error: any) {
+        // Log command execution failure
+        result.structuredLogs.push(StructuredLogger.error("command_execution", `Command failed: ${command}`, {
+          command,
+          error: error.message,
+          stderr: error.stderr,
+          exitCode: error.code,
+        }));
+        
         result.success = false;
         const errorMsg = `Failed to install npm packages: ${error.message}`;
         result.errors.push(errorMsg);
@@ -323,11 +349,29 @@ export async function installPackages(
     if (toInstall.length > 0) {
       onProgress?.(`⏳ Installing ${toInstall.length} pip package(s): ${toInstall.join(", ")}`);
       
+      const command = `pip install ${toInstall.join(" ")}`;
+      
+      // Log command execution start
+      result.structuredLogs.push(StructuredLogger.info("command_execution", `Executing: ${command}`, {
+        command,
+        cwd: workspaceDir,
+        packageManager: "pip",
+        packages: toInstall,
+      }));
+      
       try {
         const { stdout, stderr } = await execAsync(
-          `pip install ${toInstall.join(" ")}`,
+          command,
           { cwd: workspaceDir, timeout: 120000 }
         );
+        
+        // Log command execution success
+        result.structuredLogs.push(StructuredLogger.success("command_execution", `Command completed successfully: ${command}`, {
+          command,
+          stdout: stdout.trim(),
+          stderr: stderr?.trim(),
+          exitCode: 0,
+        }));
         
         result.packagesInstalled.push(...toInstall);
         const successMsg = `Successfully installed: ${toInstall.join(", ")}`;
@@ -353,6 +397,14 @@ export async function installPackages(
         
         onProgress?.(`✅ Installed ${toInstall.length} pip package(s)`);
       } catch (error: any) {
+        // Log command execution failure
+        result.structuredLogs.push(StructuredLogger.error("command_execution", `Command failed: ${command}`, {
+          command,
+          error: error.message,
+          stderr: error.stderr,
+          exitCode: error.code,
+        }));
+        
         result.success = false;
         const errorMsg = `Failed to install pip packages: ${error.message}`;
         result.errors.push(errorMsg);

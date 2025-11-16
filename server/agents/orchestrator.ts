@@ -215,6 +215,12 @@ export class AgentOrchestrator {
                       }
                     );
                     
+                    // Merge structured logs from package installation
+                    if (installResult.structuredLogs && installResult.structuredLogs.length > 0) {
+                      state.structuredLogs = state.structuredLogs || [];
+                      state.structuredLogs.push(...installResult.structuredLogs);
+                    }
+                    
                     if (installResult.success) {
                       state.logs.push("[Orchestrator] ✅ Package installation complete");
                     } else {
