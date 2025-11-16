@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -57,12 +57,6 @@ export default function AuthPage() {
       password: "",
     },
   });
-
-  // Reset forms when mode changes to ensure clean state
-  useEffect(() => {
-    signupForm.reset();
-    loginForm.reset();
-  }, [mode, signupForm, loginForm]);
 
   const signupMutation = useMutation({
     mutationFn: async (data: SignupFormData) => {
