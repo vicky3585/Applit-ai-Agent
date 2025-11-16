@@ -43,7 +43,6 @@ export default function AuthPage() {
 
   const signupForm = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
-    mode: "onChange",
     defaultValues: {
       username: "",
       email: "",
@@ -53,7 +52,6 @@ export default function AuthPage() {
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
-    mode: "onChange",
     defaultValues: {
       username: "",
       password: "",
@@ -62,19 +60,9 @@ export default function AuthPage() {
 
   // Reset forms when mode changes to ensure clean state
   useEffect(() => {
-    if (mode === "signup") {
-      signupForm.reset({
-        username: "",
-        email: "",
-        password: "",
-      });
-    } else {
-      loginForm.reset({
-        username: "",
-        password: "",
-      });
-    }
-  }, [mode]); // Only depend on mode, not form objects to avoid infinite loop
+    signupForm.reset();
+    loginForm.reset();
+  }, [mode, signupForm, loginForm]);
 
   const signupMutation = useMutation({
     mutationFn: async (data: SignupFormData) => {
