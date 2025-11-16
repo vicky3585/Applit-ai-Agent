@@ -41,15 +41,13 @@ export default function AuthPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const signupForm = useForm<SignupFormData>({
-    resolver: zodResolver(signupSchema),
-    defaultValues: {
-      username: "",
-      email: "",
-      password: "",
-    },
-  });
+  // Signup - simple controlled inputs
+  const [signupUsername, setSignupUsername] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupErrors, setSignupErrors] = useState<Record<string, string>>({});
 
+  // Login - React Hook Form (works fine)
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
     defaultValues: {
@@ -69,7 +67,11 @@ export default function AuthPage() {
         description: "Please log in to continue.",
       });
       setMode("login");
-      signupForm.reset();
+      // Reset signup form
+      setSignupUsername("");
+      setSignupEmail("");
+      setSignupPassword("");
+      setSignupErrors({});
     },
     onError: (error: Error) => {
       toast({
@@ -105,8 +107,29 @@ export default function AuthPage() {
     },
   });
 
-  const onSignupSubmit = (data: SignupFormData) => {
-    signupMutation.mutate(data);
+  const onSignupSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSignupErrors({});
+
+    // Validate using Zod schema
+    const result = signupSchema.safeParse({
+      username: signupUsername,
+      email: signupEmail,
+      password: signupPassword,
+    });
+
+    if (!result.success) {
+      const errors: Record<string, string> = {};
+      result.error.errors.forEach((err) => {
+        if (err.path[0]) {
+          errors[err.path[0].toString()] = err.message;
+        }
+      });
+      setSignupErrors(errors);
+      return;
+    }
+
+    signupMutation.mutate(result.data);
   };
 
   const onLoginSubmit = (data: LoginFormData) => {
@@ -192,71 +215,67 @@ export default function AuthPage() {
 
             <CardContent>
               {mode === "signup" ? (
-                <Form {...signupForm}>
-                  <form onSubmit={signupForm.handleSubmit(onSignupSubmit)} className="space-y-4">
-                    <FormField
-                      control={signupForm.control}
-                      name="username"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Username</FormLabel>
-                          <Input 
-                            data-testid="input-username"
-                            type="text"
-                            placeholder="johndoe" 
-                            {...field} 
-                          />
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                <form onSubmit={onSignupSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="signup-username" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      Username
+                    </label>
+                    <Input 
+                      id="signup-username"
+                      data-testid="input-username"
+                      type="text"
+                      placeholder="johndoe"
+                      value={signupUsername}
+                      onChange={(e) => setSignupUsername(e.target.value)}
                     />
+                    {signupErrors.username && (
+                      <p className="text-sm font-medium text-destructive">{signupErrors.username}</p>
+                    )}
+                  </div>
 
-                    <FormField
-                      control={signupForm.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <Input 
-                            data-testid="input-email"
-                            type="email" 
-                            placeholder="john@example.com" 
-                            {...field} 
-                          />
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                  <div className="space-y-2">
+                    <label htmlFor="signup-email" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      Email
+                    </label>
+                    <Input 
+                      id="signup-email"
+                      data-testid="input-email"
+                      type="email"
+                      placeholder="john@example.com"
+                      value={signupEmail}
+                      onChange={(e) => setSignupEmail(e.target.value)}
                     />
+                    {signupErrors.email && (
+                      <p className="text-sm font-medium text-destructive">{signupErrors.email}</p>
+                    )}
+                  </div>
 
-                    <FormField
-                      control={signupForm.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <Input 
-                              data-testid="input-password"
-                              type="password" 
-                              placeholder="••••••••" 
-                              {...field} 
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                  <div className="space-y-2">
+                    <label htmlFor="signup-password" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                      Password
+                    </label>
+                    <Input 
+                      id="signup-password"
+                      data-testid="input-password"
+                      type="password"
+                      placeholder="••••••••"
+                      value={signupPassword}
+                      onChange={(e) => setSignupPassword(e.target.value)}
                     />
+                    {signupErrors.password && (
+                      <p className="text-sm font-medium text-destructive">{signupErrors.password}</p>
+                    )}
+                  </div>
 
-                    <Button 
-                      data-testid="button-signup"
-                      type="submit" 
-                      className="w-full" 
-                      disabled={signupMutation.isPending}
-                    >
-                      {signupMutation.isPending ? "Creating account..." : "Create account"}
-                    </Button>
-                  </form>
-                </Form>
+                  <Button 
+                    data-testid="button-signup"
+                    type="submit" 
+                    className="w-full" 
+                    disabled={signupMutation.isPending}
+                  >
+                    {signupMutation.isPending ? "Creating account..." : "Create account"}
+                  </Button>
+                </form>
               ) : (
                 <Form {...loginForm}>
                   <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
