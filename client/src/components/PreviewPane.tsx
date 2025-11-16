@@ -123,18 +123,18 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
     }
   };
 
-  const getStatusBadgeVariant = (): "default" | "secondary" | "destructive" | "outline" => {
+  const getStatusBadgeClass = (): string => {
     switch (serverStatus) {
       case "running":
-        return "default"; // Will be styled green
+        return "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20 hover:bg-green-500/15";
       case "starting":
       case "restarting":
-        return "secondary"; // Will be styled yellow/orange
+        return "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/15";
       case "error":
-        return "destructive"; // Will be styled red
+        return "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20 hover:bg-red-500/15";
       case "stopped":
       default:
-        return "outline"; // Will be styled gray
+        return "bg-muted text-muted-foreground border-border hover:bg-muted/80";
     }
   };
 
@@ -195,8 +195,8 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
         {/* Server Status Badge */}
         {serverStatus && (
           <Badge
-            variant={getStatusBadgeVariant()}
-            className="gap-1 text-xs"
+            variant="outline"
+            className={`gap-1 text-xs ${getStatusBadgeClass()}`}
             data-testid="badge-server-status"
           >
             <Server className="w-3 h-3" />
