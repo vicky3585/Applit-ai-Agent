@@ -56,6 +56,12 @@ app.use((req, res, next) => {
   const storage = await storagePromise;
   log("Storage ready");
 
+  // Initialize AI client and perform vLLM health check
+  log("Initializing AI client...");
+  const { initializeAIClient } = await import("./utils/ai-client");
+  await initializeAIClient();
+  log("AI client ready");
+
   // Inject storage into sandbox for multi-language execution
   sandbox.setStorage(storage);
   log("Sandbox configured with storage");

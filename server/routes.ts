@@ -14,9 +14,6 @@ import * as github from "./github";
 import * as git from "./git";
 import { initializeYjsProvider } from "./yjs-provider";
 import * as path from "path";
-import { createAIClient } from "./utils/ai-client";
-
-const openai = createAIClient();
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -215,6 +212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Import and create orchestrator
       const { AgentOrchestrator } = await import("./agents/orchestrator");
+      const { createAIClientSync } = await import("./utils/ai-client");
       const orchestrator = new AgentOrchestrator(storage);
 
       // Create agent context (max attempts will be read from settings inside orchestrator)
@@ -223,7 +221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         prompt: userMessage,
         existingFiles: files,
         settings: settings || null,
-        openai,
+        openai: createAIClientSync(),
       };
 
       // Execute workflow with real-time updates
@@ -1116,12 +1114,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("[Agent] Using TypeScript orchestrator (Python agent not available)");
         
         const { AgentOrchestrator } = await import("./agents/orchestrator");
-        const { createAIClient } = await import("./utils/ai-client");
+        const { createAIClientSync } = await import("./utils/ai-client");
         
         const files = await storage.getFilesByWorkspace(workspaceId);
         const settings = await storage.getWorkspaceSettings(workspaceId) || null;
         
-        const openai = createAIClient();
+        const openai = createAIClientSync();
         
         const orchestrator = new AgentOrchestrator(storage);
         

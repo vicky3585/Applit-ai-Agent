@@ -3,7 +3,7 @@
 **Developed by Flying Venture System**
 
 ## Overview
-Applit is an AI-powered Web IDE designed to facilitate full "prompt-to-app" workflows, allowing users to describe applications in natural language. The system then automates the planning, coding, testing, and deployment processes, offering a live preview within a split-screen code editor. It integrates essential development tools, AI agents for code generation and correction, file persistence, hot reload capabilities, and a scalable architecture to provide a comprehensive development environment.
+Applit is an AI-powered Web IDE designed for "prompt-to-app" workflows, enabling users to describe applications in natural language. It automates planning, coding, testing, and deployment, offering a live preview within a split-screen editor. The system integrates essential development tools, AI agents, file persistence, hot reload capabilities, and a scalable architecture to provide a comprehensive development environment. Its core ambition is to simplify and accelerate the entire software development lifecycle through intelligent automation.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -16,84 +16,35 @@ The frontend uses React 18, TypeScript, and Vite, styled with Shadcn/ui (Radix U
 ### Technical Implementations
 **Frontend:** Utilizes TanStack Query for data fetching, Wouter for routing, and WebSocket clients for real-time communication. The Monaco Editor is integrated with Y-Monaco bindings for collaborative editing.
 
-**Authentication System:** Implements JWT-based authentication with refresh token rotation. Access and refresh tokens are managed via httpOnly cookies. Session management includes atomic cap enforcement (MAX_SESSIONS_PER_USER=5) using row-level locking in PostgresStorage, progressive account lockout, and token reuse detection.
+**Authentication System:** Implements JWT-based authentication with refresh token rotation, managed via httpOnly cookies. It includes session management with atomic cap enforcement, progressive account lockout, and token reuse detection.
 
-**Backend:** Developed with Express.js and TypeScript. A dedicated WebSocket server manages real-time features per workspace. An abstract storage layer (MemStorage for in-memory, PostgresStorage for PostgreSQL) adheres to the IStorage contract. RESTful APIs handle CRUD operations, and WebSockets facilitate real-time AI agent interactions and collaborative editing via a Yjs Provider.
+**Backend:** Developed with Express.js and TypeScript. A dedicated WebSocket server manages real-time features. An abstract storage layer (MemStorage for in-memory, PostgresStorage for PostgreSQL) adheres to the IStorage contract. RESTful APIs handle CRUD operations, and WebSockets facilitate real-time AI agent interactions and collaborative editing via a Yjs Provider.
 
-**AI Multi-Agent System:** Consists of Planner, Coder, and Tester agents that coordinate to analyze requests, generate, and validate code. It includes an auto-fix loop with error feedback learning and an Orchestrator that manages the Planner→Coder→Tester→Fix workflow, broadcasting real-time state and enhancing error handling. Workflow logs are streamed to the chat panel, and generated files are automatically saved and displayed.
+**AI Multi-Agent System:** Comprises Planner, Coder, and Tester agents that coordinate to analyze requests, generate, and validate code. It includes an auto-fix loop with error feedback learning and an Orchestrator that manages the Planner→Coder→Tester→Fix workflow, broadcasting real-time state and enhancing error handling.
 
-**Phase 1 Autonomous Workflow (COMPLETE - Production Ready - November 16, 2024):** Fully automated agent workflow similar to Replit Agent:
-- **Template-Based Generation System (FINAL - November 16, 2024)**: Implemented deterministic React/Vite project scaffolding with 8-file template (package.json, index.html, vite.config.ts, tsconfig files, src/main.tsx, src/index.css, src/App.tsx with working counter). Eliminates AI generation errors for simple requests, ensures all required files present. Orchestrator auto-clears existing files before template application to guarantee clean slate (existingFiles=0 condition). Smart component generation: template-only for simple prompts, template + AI for complex requests. **Fixed validator**: Template-based projects auto-pass validation (templates are pre-validated), preventing false positives from AI validator.
-- **Auto Package Detection & Installation**: Fully integrated into orchestrator workflow. Parses package.json and code imports, filters built-ins, checks existing packages, and auto-installs missing dependencies via npm/pip with real-time progress broadcasting. Runs AFTER testing validation, BEFORE dev server spawn to ensure packages available. Removed legacy premature dev server code from routes.ts that was causing "Cannot find package 'vite'" errors.
-- **Auto Dev Server Spawning**: After code generation and package installation, automatically detects project type (Node.js, Python, Vite, static) from package.json and spawns appropriate development server with port allocation and preview URL broadcasting. Binds to 0.0.0.0:3000 for network access. Controlled by orchestrator for proper workflow ordering.
-- **Progress Timeline UI**: Visual timeline showing workflow phases (Planning → Coding → Testing → Package Installation → Dev Server → Complete) with animated status indicators, checkmarks for completed steps, spinners for active steps, and X marks for failures.
-- **Error Handling & Retry**: Max 3-attempt retry loop with structured error feedback integrated into the autonomous workflow. Package installation errors logged but non-blocking.
-- **Durable State Management**: Progress and failure state persist through retries, timeline accuracy maintained across all status transitions, defensive initialization prevents false positives.
-- **Implementation Details**: 
-  - Created server/agents/templates/react-vite.ts with complete 8-file scaffold
-  - Modified server/agents/coder.ts for template-based generation with smart component logic
-  - Updated server/agents/orchestrator.ts to auto-clear files and control complete workflow
-  - Removed legacy dev server auto-start code from routes.ts (was causing premature execution)
-  - Fixed environment detection priority in shared/environment.ts
-  - Added .env configuration for Ubuntu deployment (DEPLOYMENT_ENV=local)
+**Autonomous Workflow:** Features a template-based generation system for deterministic project scaffolding, auto-package detection and installation, and automatic development server spawning based on project type. A progress timeline UI visualizes workflow phases, and the system includes error handling with retry logic and durable state management.
 
-**Phase 2: Enhanced Logging & Feedback System (COMPLETE - Production Ready):**
-- **Structured Log Schema**: Added LogEntry type with timestamp, level (info/warn/error/success/debug), phase (system/planning/coding/testing/fixing/package_install/dev_server/complete), message, and optional metadata. AgentExecution table includes backward-compatible structuredLogs field alongside legacy logs.
-- **StructuredLogger Utility**: Centralized logging module (server/logger.ts) with createLogEntry() and convertLegacyLogs() functions for consistent log creation across TypeScript components.
-- **Package Installer Integration**: package-installer.ts emits structured logs for npm/pip operations with phase metadata, package lists, status, and error context.
-- **Storage Layer Support**: IStorage interface and MemStorage implementation handle optional structuredLogs field with graceful fallback to legacy logs when absent.
-- **Frontend UI Components**: LogEntry component displays individual logs with level-based icons/colors. LogPhaseGroup component organizes logs into collapsible phase sections with error/warning counts.
-- **AgentWorkflowCard Integration**: Conditionally renders structured logs grouped by phase with filtering controls (by level/phase/keyword), auto-expand on errors, and JSON export functionality. Falls back to legacy string logs when structured logs unavailable.
-- **Dev Server Interface**: DevServerStartResult interface defined for future structured logging integration in dev-server-manager.ts.
-- **Future Work**: Complete routes.ts orchestration integration, Python agent structured logging, and automated test coverage for filter/export behavior.
+**Enhanced Logging & Feedback System:** Incorporates a structured log schema and a centralized StructuredLogger utility for consistent log creation. Frontend UI components display logs grouped by phase with filtering controls.
 
 **Core IDE Features:**
-- **File Persistence System:** Dual-layer storage (in-memory + disk) with security measures against path traversal.
+- **File Persistence System:** Dual-layer storage (in-memory + disk) with security measures.
 - **Hot Reload System:** Uses chokidar for file watching and WebSockets for real-time preview updates.
-- **Dev Server Manager:** Automatically detects application types (Node.js, Python, Vite, static HTML) and spawns development servers with port management.
-- **Code Execution System:** Docker-based sandbox for isolated, multi-language code execution (JavaScript, Python, Go, Rust, C/C++, Java, Ruby, PHP, Shell) with real-time output streaming.
-- **Live Preview System (FIXED - November 16, 2024):**
-  - **Iframe HMR Stripping**: Uses http-proxy-middleware with responseInterceptor to remove `/@vite/client` script injection from HTML responses, preventing WebSocket errors in sandboxed iframes.
-  - **Network-Aware Preview URLs**: On Ubuntu/local, preview URL uses the same hostname as the main app request (e.g., `http://192.168.31.138:3000` when accessing from `192.168.31.138:5000`). On Replit, returns proxy URL for same-origin policy compliance.
-  - **Fix for Network Access Bug**: Preview now works when accessing from network IPs. Extracts hostname from request header and constructs dev server URL with same hostname but different port. Fixes iframe localhost mismatch where browser tried to load `localhost:3000` from user's machine instead of server.
-- **Developer Tools:** Includes a Package Manager UI (npm, pip, apt), Project Templates, GitHub & Git Integration, Live Preview Pane, Settings Modal, Command Palette, and Keyboard Shortcuts.
+- **Dev Server Manager:** Automatically detects application types and spawns development servers with port management.
+- **Code Execution System:** Docker-based sandbox for isolated, multi-language code execution with real-time output streaming.
+- **Live Preview System:** Features iframe HMR stripping and network-aware preview URLs to ensure proper rendering across environments.
+- **Developer Tools:** Includes a Package Manager UI, Project Templates, GitHub & Git Integration, Live Preview Pane, Settings Modal, Command Palette, and Keyboard Shortcuts.
 
 **Multiplayer Foundation:**
-- **Yjs Persistence Layer:** Manages Yjs document storage with debounced auto-save and save-on-disconnect functionality, ensuring data persistence and restoration.
-- **User Presence System:** Leverages Y.Awareness for real-time cursor/selection tracking and user presence indicators in the editor and file explorer.
-- **Follow Mode:** Allows users to track another collaborator's active file, with UI indicators and multiple exit mechanisms.
+- **Yjs Persistence Layer:** Manages Yjs document storage with debounced auto-save and save-on-disconnect.
+- **User Presence System:** Leverages Y.Awareness for real-time cursor/selection tracking.
+- **Follow Mode:** Allows users to track another collaborator's active file.
 
-**Multi-Project Support:** Implements REST API endpoints for managing workspaces (create, list, delete) with ownership verification and name validation.
+**Multi-Project Support:** Implements REST API endpoints for managing workspaces with ownership verification and name validation.
+
+**Static App Deployment System:** Features a data model for deployment lifecycle tracking, storage layer integration, API routes for triggering and listing deployments, and an Nginx template for path-based routing, SPA fallback, and static asset caching.
 
 ### System Design Choices
-The system is built on a hybrid Node.js + Python architecture. Data storage uses both in-memory (MemStorage) for the Replit environment and PostgreSQL 16 (PostgresStorage) for local Ubuntu, both implementing the IStorage contract. Concurrency in MemStorage is managed by JavaScript's event loop, while PostgresStorage uses row-level locking for atomic session operations. Authentication uses JWTs with refresh token rotation, bcrypt hashing for refresh tokens, and a progressive account lockout mechanism.
-
-**PostgreSQL Storage Status (November 2025):**
-- ✅ **Core Functionality**: PostgresStorage fully operational, all 28 IStorage methods implemented
-- ✅ **Data Persistence**: Workspace, files, chat messages, agent executions, deployments persisting correctly
-- ✅ **Storage Factory**: Auto-detects DATABASE_URL accessibility, uses PostgresStorage when available
-- ✅ **Yjs Persistence**: Real-time collaborative editing documents persist to yjs_documents table
-- ✅ **Atomic Operations**: Transaction-based agent execution updates with FOR UPDATE locks
-- ✅ **Session Management**: Advisory locks for MAX_SESSIONS_PER_USER cap enforcement
-- ⚠️ **Production Hardening Needed**:
-  - Advisory lock hashing uses simple char-code sum (collision-prone for anagrams) - needs 64-bit hash
-  - Schema drift from manual SQL alterations - needs Drizzle migration reconciliation
-  - Input validation with Zod not yet implemented on write paths
-- **Deployment Note**: Core persistence works for Ubuntu 24.04, production fixes scheduled for focused session
-
-**Static App Deployment System (Priority 0 - January 2025):**
-- ✅ **Data Model**: Deployments table with lifecycle tracking (pending→building→success/failed), build logs, artifact paths, and public URLs
-- ✅ **Storage Layer**: 4 deployment methods added to IStorage interface with full PostgresStorage implementation and MemStorage stubs
-- ✅ **API Routes**: POST /api/workspaces/:id/deploy (trigger deployment), GET /api/workspaces/:id/deployments (list history)
-- ✅ **Nginx Template**: Path-based routing (/apps/<workspaceId>/), SPA fallback, static asset caching, security headers
-- ✅ **Documentation**: Comprehensive DEPLOYMENT_GUIDE.md with architecture decisions, testing checklist, troubleshooting
-- 🚧 **Deferred to Next Pass**:
-  - Build executor with pluggable strategy pattern (Vite, Static HTML, CRA detection)
-  - Setup script for nginx installation and permissions
-  - Build log streaming and atomic symlink deployment
-  - Frontend UI for deployment triggers and status display
-- **Architecture**: Per-workspace static builds in /var/www/ai-ide/<workspaceId>/, atomic symlink swaps, timestamped releases, zero-downtime deployments
-- **Scope**: Static-only MVP (HTML/CSS/JS), defers subdomain routing, SSL/TLS, backend deployments to later phases
+The system uses a hybrid Node.js + Python architecture. Data storage uses both in-memory (MemStorage) and PostgreSQL (PostgresStorage) implementing the IStorage contract. Concurrency in MemStorage is managed by JavaScript's event loop, while PostgresStorage uses row-level locking for atomic operations. Authentication uses JWTs with refresh token rotation, bcrypt hashing, and a progressive account lockout mechanism. PostgreSQL storage is fully operational for core functionality, data persistence, and Yjs persistence, with transaction-based agent execution updates and advisory locks for session management.
 
 ## External Dependencies
 
@@ -102,42 +53,3 @@ The system is built on a hybrid Node.js + Python architecture. Data storage uses
 *   **UI Libraries**: Radix UI, Tailwind CSS, Lucide React
 *   **Build & Runtime**: Vite, esbuild, tsx, Drizzle Kit
 *   **Session Management**: connect-pg-simple
-
-## vLLM Integration (Local GPU Inference)
-
-**Status**: Implemented (November 16, 2024)
-
-Applit supports hybrid AI mode combining OpenAI API with local vLLM GPU inference for cost-effective, high-performance code generation:
-
-- **Hybrid Mode**: Uses local vLLM for planning/testing tasks, OpenAI GPT-4 for critical code generation
-- **GPU Support**: Optimized for NVIDIA GPUs (tested on RTX 3060 12GB)
-- **OpenAI-Compatible**: vLLM provides drop-in OpenAI API replacement
-- **Performance**: Up to 24x faster than HuggingFace Transformers with PagedAttention
-
-### Files:
-- `server/utils/ai-client.ts` - AI client factory for OpenAI/vLLM/hybrid mode
-- `docs/VLLM_SETUP.md` - Comprehensive setup guide
-- `scripts/setup-vllm.sh` - Automated setup script
-- `.env.example` - Environment configuration with vLLM settings
-
-### Configuration:
-```bash
-AI_PROVIDER=hybrid
-VLLM_API_BASE=http://localhost:8000/v1
-VLLM_MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
-CUDA_VISIBLE_DEVICES=0
-```
-
-### Quick Start:
-```bash
-# Run automated setup
-./scripts/setup-vllm.sh
-
-# Start vLLM server
-./start-vllm.sh
-
-# Start Applit (in new terminal)
-npm run dev
-```
-
-See `docs/VLLM_SETUP.md` for detailed instructions.
