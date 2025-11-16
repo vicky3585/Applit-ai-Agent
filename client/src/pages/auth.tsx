@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -43,6 +43,7 @@ export default function AuthPage() {
 
   const signupForm = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
+    mode: "onChange",
     defaultValues: {
       username: "",
       email: "",
@@ -52,11 +53,28 @@ export default function AuthPage() {
 
   const loginForm = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema),
+    mode: "onChange",
     defaultValues: {
       username: "",
       password: "",
     },
   });
+
+  // Reset forms when mode changes to ensure clean state
+  useEffect(() => {
+    if (mode === "signup") {
+      signupForm.reset({
+        username: "",
+        email: "",
+        password: "",
+      });
+    } else {
+      loginForm.reset({
+        username: "",
+        password: "",
+      });
+    }
+  }, [mode]); // Only depend on mode, not form objects to avoid infinite loop
 
   const signupMutation = useMutation({
     mutationFn: async (data: SignupFormData) => {
@@ -200,14 +218,12 @@ export default function AuthPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Username</FormLabel>
-                          <FormControl>
-                            <Input 
-                              data-testid="input-username"
-                              placeholder="johndoe" 
-                              {...field} 
-                              autoComplete="username"
-                            />
-                          </FormControl>
+                          <Input 
+                            data-testid="input-username"
+                            type="text"
+                            placeholder="johndoe" 
+                            {...field} 
+                          />
                           <FormMessage />
                         </FormItem>
                       )}
@@ -219,15 +235,12 @@ export default function AuthPage() {
                       render={({ field }) => (
                         <FormItem>
                           <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <Input 
-                              data-testid="input-email"
-                              type="email" 
-                              placeholder="john@example.com" 
-                              {...field} 
-                              autoComplete="email"
-                            />
-                          </FormControl>
+                          <Input 
+                            data-testid="input-email"
+                            type="email" 
+                            placeholder="john@example.com" 
+                            {...field} 
+                          />
                           <FormMessage />
                         </FormItem>
                       )}
@@ -245,7 +258,6 @@ export default function AuthPage() {
                               type="password" 
                               placeholder="••••••••" 
                               {...field} 
-                              autoComplete="new-password"
                             />
                           </FormControl>
                           <FormMessage />
@@ -277,7 +289,6 @@ export default function AuthPage() {
                               data-testid="input-username"
                               placeholder="johndoe" 
                               {...field} 
-                              autoComplete="username"
                             />
                           </FormControl>
                           <FormMessage />
@@ -297,7 +308,6 @@ export default function AuthPage() {
                               type="password" 
                               placeholder="••••••••" 
                               {...field} 
-                              autoComplete="current-password"
                             />
                           </FormControl>
                           <FormMessage />
