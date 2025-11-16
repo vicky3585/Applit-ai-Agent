@@ -10,6 +10,7 @@ import ChatPanel from "@/components/ChatPanel";
 import TerminalPanel from "@/components/TerminalPanel";
 import AgentStatePanel from "@/components/AgentStatePanel";
 import LogsPanel from "@/components/LogsPanel";
+import FilesChangedPanel from "@/components/FilesChangedPanel";
 import { GitPanel } from "@/components/GitPanel";
 import { CodeExecutionPanel } from "@/components/CodeExecutionPanel";
 import { PackageInstallation } from "@/components/PackageInstallation";
@@ -959,6 +960,9 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
               <TabsTrigger value="chat" className="text-xs" data-testid="tab-chat">
                 Chat
               </TabsTrigger>
+              <TabsTrigger value="files" className="text-xs" data-testid="tab-files">
+                Files
+              </TabsTrigger>
               <TabsTrigger value="execution" className="text-xs" data-testid="tab-execution">
                 Execution
               </TabsTrigger>
@@ -991,6 +995,9 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
                 agentWorkflow={agentWorkflow}
                 onFileClick={handleFileClickFromWorkflow}
               />
+            </TabsContent>
+            <TabsContent value="files" className="flex-1 m-0 overflow-hidden">
+              <FilesChangedPanel filesGenerated={agentWorkflow?.files_generated || []} />
             </TabsContent>
             <TabsContent value="execution" className="flex-1 m-0 overflow-hidden">
               <CodeExecutionPanel
