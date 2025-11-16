@@ -48,8 +48,20 @@ The system uses a hybrid Node.js + Python architecture. Data storage uses both i
 
 ## External Dependencies
 
-*   **AI Services**: OpenAI API, vLLM (optional local GPU inference)
+*   **AI Services**: OpenAI API, vLLM (optional local GPU inference with hybrid fallback)
 *   **Database**: PostgreSQL (via Neon serverless driver)
 *   **UI Libraries**: Radix UI, Tailwind CSS, Lucide React
 *   **Build & Runtime**: Vite, esbuild, tsx, Drizzle Kit
 *   **Session Management**: connect-pg-simple
+
+## Recent Improvements (Nov 2025)
+
+### Hybrid AI Provider System
+- **Robust vLLM Health Checks**: Now validates `/models` endpoint to verify models are loaded, not just server availability
+- **UI-Backend Integration**: Settings modal model provider selection (OpenAI/Anthropic/Local vLLM) properly connected to backend
+- **Automatic Fallback**: Gracefully switches between OpenAI and vLLM based on runtime availability
+- **Async Client Creation**: Fixed race condition where manual provider selection was ignored due to health check timing
+- **Manual Override Support**: Users can force specific provider via UI, bypassing automatic detection
+- **60s Health Cache**: Prevents API spam while allowing rapid recovery when vLLM becomes available
+
+See `docs/HYBRID_MODE.md` for complete implementation details.
