@@ -655,11 +655,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const devServer = manager.getServer(workspaceId);
       
       if (devServer && devServer.url) {
-        // On Ubuntu/local: Return direct dev server URL (http://localhost:3000)
+        // On Ubuntu/local: Return network-accessible URL (use same host as main app, different port)
         // On Replit: Return proxy URL (for same-origin policy)
-        const previewUrl = ENV_CONFIG.env === "local" 
-          ? devServer.url 
-          : `${baseUrl}/preview/${workspaceId}/`;
+        let previewUrl: string;
+        
+        if (ENV_CONFIG.env === "local") {
+          // Extract hostname from the request (e.g., 192.168.31.138 or localhost)
+          const hostname = host.split(':')[0]; // Remove port from host
+          previewUrl = `http://${hostname}:${devServer.port}`;
+        } else {
+          // Replit: use proxy
+          previewUrl = `${baseUrl}/preview/${workspaceId}/`;
+        }
         
         console.log(`[Preview URL] Dev server detected (${devServer.type} on ${ENV_CONFIG.env}), returning: ${previewUrl}`);
         return res.json({ 

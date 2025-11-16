@@ -54,8 +54,8 @@ The frontend uses React 18, TypeScript, and Vite, styled with Shadcn/ui (Radix U
 - **Code Execution System:** Docker-based sandbox for isolated, multi-language code execution (JavaScript, Python, Go, Rust, C/C++, Java, Ruby, PHP, Shell) with real-time output streaming.
 - **Live Preview System (FIXED - November 16, 2024):**
   - **Iframe HMR Stripping**: Uses http-proxy-middleware with responseInterceptor to remove `/@vite/client` script injection from HTML responses, preventing WebSocket errors in sandboxed iframes.
-  - **Environment-Aware Preview URLs**: On Ubuntu/local, preview URL returns direct dev server URL (http://localhost:3000). On Replit, returns proxy URL for same-origin policy compliance.
-  - **Fix for "Blue Screen" Bug**: Ubuntu was returning proxy URL instead of direct dev server URL, causing index.html to load (CSS gradient visible) but main.tsx to 404 (React app never mounted). Fixed by detecting ENV_CONFIG.env and returning appropriate URL.
+  - **Network-Aware Preview URLs**: On Ubuntu/local, preview URL uses the same hostname as the main app request (e.g., `http://192.168.31.138:3000` when accessing from `192.168.31.138:5000`). On Replit, returns proxy URL for same-origin policy compliance.
+  - **Fix for Network Access Bug**: Preview now works when accessing from network IPs. Extracts hostname from request header and constructs dev server URL with same hostname but different port. Fixes iframe localhost mismatch where browser tried to load `localhost:3000` from user's machine instead of server.
 - **Developer Tools:** Includes a Package Manager UI (npm, pip, apt), Project Templates, GitHub & Git Integration, Live Preview Pane, Settings Modal, Command Palette, and Keyboard Shortcuts.
 
 **Multiplayer Foundation:**
