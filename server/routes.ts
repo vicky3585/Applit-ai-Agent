@@ -212,16 +212,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Import and create orchestrator
       const { AgentOrchestrator } = await import("./agents/orchestrator");
-      const { createAIClientSync } = await import("./utils/ai-client");
+      const { createAIClient } = await import("./utils/ai-client");
       const orchestrator = new AgentOrchestrator(storage);
 
+      // Respect workspace model provider setting (UI selector)
+      // Map UI values: "openai" → openai, "local" → vllm, "anthropic" → openai (for now)
+      let forceProvider: "openai" | "vllm" | undefined = undefined;
+      if (settings?.modelProvider === "local") {
+        forceProvider = "vllm"; // User explicitly selected Local vLLM
+      } else if (settings?.modelProvider === "openai") {
+        forceProvider = "openai"; // User explicitly selected OpenAI
+      }
+      // If no setting or "anthropic", use environment default (hybrid mode)
+
       // Create agent context (max attempts will be read from settings inside orchestrator)
+      // Use ASYNC version to properly check vLLM health before creating client
       const context = {
         workspaceId,
         prompt: userMessage,
         existingFiles: files,
         settings: settings || null,
-        openai: createAIClientSync(),
+        openai: await createAIClient(forceProvider ? { forceProvider } : undefined),
       };
 
       // Execute workflow with real-time updates
@@ -1114,12 +1125,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("[Agent] Using TypeScript orchestrator (Python agent not available)");
         
         const { AgentOrchestrator } = await import("./agents/orchestrator");
-        const { createAIClientSync } = await import("./utils/ai-client");
+        const { createAIClient } = await import("./utils/ai-client");
         
         const files = await storage.getFilesByWorkspace(workspaceId);
         const settings = await storage.getWorkspaceSettings(workspaceId) || null;
         
-        const openai = createAIClientSync();
+        // Respect workspace model provider setting (UI selector)
+        // Map UI values: "openai" → openai, "local" → vllm, "anthropic" → openai (for now)
+        let forceProvider: "openai" | "vllm" | undefined = undefined;
+        if (settings?.modelProvider === "local") {
+          forceProvider = "vllm"; // User explicitly selected Local vLLM
+        } else if (settings?.modelProvider === "openai") {
+          forceProvider = "openai"; // User explicitly selected OpenAI
+        }
+        // If no setting or "anthropic", use environment default (hybrid mode)
+        
+        // Use ASYNC version to properly check vLLM health before creating client
+        const openai = await createAIClient(forceProvider ? { forceProvider } : undefined);
         
         const orchestrator = new AgentOrchestrator(storage);
         

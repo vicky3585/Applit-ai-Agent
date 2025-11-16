@@ -150,17 +150,23 @@ export function createAIClientSync(options?: AIClientOptions): OpenAI {
     });
   }
   
-  // Try vLLM only if it's currently marked healthy
-  if (options?.forceProvider === "vllm" && vllmRuntimeAvailable) {
-    console.log(`[AI Client] ✅ Using vLLM (explicit override, health verified) at ${process.env.VLLM_API_BASE}`);
-    return new OpenAI({
-      apiKey: "EMPTY",
-      baseURL: process.env.VLLM_API_BASE,
-    });
-  }
-  
-  // Explicit vLLM requested but unavailable - fallback
-  if (options?.forceProvider === "vllm" && !vllmRuntimeAvailable) {
+  // Try vLLM if explicitly requested - perform fresh health check
+  if (options?.forceProvider === "vllm") {
+    if (ENV_CONFIG.ai.vllmAvailable) {
+      // Trigger health check in background to update cache
+      isVLLMHealthy().catch(() => {});
+      
+      // Use current health status (or cached if recent)
+      if (vllmRuntimeAvailable) {
+        console.log(`[AI Client] ✅ Using vLLM (explicit override, health verified) at ${process.env.VLLM_API_BASE}`);
+        return new OpenAI({
+          apiKey: "EMPTY",
+          baseURL: process.env.VLLM_API_BASE,
+        });
+      }
+    }
+    
+    // vLLM explicitly requested but unavailable - fallback
     console.warn(`[AI Client] ⚠️  vLLM requested but unavailable, falling back to OpenAI`);
     return new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
@@ -226,7 +232,8 @@ export function getRuntimeProvider(): "openai" | "vllm" {
 }
 
 /**
- * Check if vLLM is available and running
+ * Check if vLLM is available and running with models loaded
+ * IMPROVED: Check /v1/models endpoint to verify models are actually available
  */
 export async function checkVLLMHealth(): Promise<boolean> {
   if (!ENV_CONFIG.ai.vllmAvailable || !process.env.VLLM_API_BASE) {
@@ -234,13 +241,30 @@ export async function checkVLLMHealth(): Promise<boolean> {
   }
 
   try {
-    const response = await fetch(`${process.env.VLLM_API_BASE}/health`, {
+    // Check /v1/models endpoint to verify models are loaded
+    // This is more robust than just /health
+    const response = await fetch(`${process.env.VLLM_API_BASE}/models`, {
       method: 'GET',
       signal: AbortSignal.timeout(5000), // 5 second timeout
     });
-    return response.ok;
-  } catch (error) {
-    console.error('[AI Client] vLLM health check failed:', error);
+    
+    if (!response.ok) {
+      console.warn(`[AI Client] vLLM health check failed: ${response.status} ${response.statusText}`);
+      return false;
+    }
+    
+    // Verify response has models
+    const data = await response.json();
+    const hasModels = data.data && Array.isArray(data.data) && data.data.length > 0;
+    
+    if (!hasModels) {
+      console.warn('[AI Client] vLLM running but no models loaded');
+      return false;
+    }
+    
+    return true;
+  } catch (error: any) {
+    console.warn(`[AI Client] vLLM health check failed: ${error.message}`);
     return false;
   }
 }
