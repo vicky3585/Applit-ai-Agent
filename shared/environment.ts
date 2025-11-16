@@ -51,14 +51,15 @@ export interface EnvironmentConfig {
  * Detect current environment
  */
 export function detectEnvironment(): Environment {
-  // Priority 1: Explicit override via DEPLOYMENT_ENV
-  if (process.env.DEPLOYMENT_ENV === "local") {
-    return "local";
-  }
-  
-  // Priority 2: Check for Replit-specific environment variables
+  // Priority 1: Check for Replit-specific environment variables (most reliable)
+  // These are ALWAYS present on Replit, even if .env has DEPLOYMENT_ENV=local
   if (process.env.REPL_ID || process.env.REPL_SLUG) {
     return "replit";
+  }
+  
+  // Priority 2: Explicit override via DEPLOYMENT_ENV (for local development)
+  if (process.env.DEPLOYMENT_ENV === "local") {
+    return "local";
   }
   
   // Default to local for development
