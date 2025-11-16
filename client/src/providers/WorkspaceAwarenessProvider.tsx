@@ -210,13 +210,26 @@ export function WorkspaceAwarenessProvider({
 }
 
 /**
+ * No-op fallback for when collaborative editing is disabled
+ */
+const NO_OP_AWARENESS_VALUE: WorkspaceAwarenessContextValue = {
+  awareness: null,
+  users: [],
+  setLocalPresence: () => {}, // No-op
+  clearLocalPresence: () => {}, // No-op
+};
+
+/**
  * Hook to access workspace-level awareness
+ * Returns no-op defaults when provider is not present (collaboration disabled)
  */
 export function useWorkspaceAwareness() {
   const context = useContext(WorkspaceAwarenessContext);
   
+  // Return no-op defaults when collaboration is disabled
+  // This allows IDE to function without Yjs features
   if (!context) {
-    throw new Error("useWorkspaceAwareness must be used within WorkspaceAwarenessProvider");
+    return NO_OP_AWARENESS_VALUE;
   }
   
   return context;

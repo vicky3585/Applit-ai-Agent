@@ -120,6 +120,17 @@ Your task:
 4. Add helpful comments
 5. Follow best practices
 
+🚨 CRITICAL VERSION REQUIREMENTS - READ CAREFULLY:
+When generating package.json files, you MUST use these EXACT version numbers:
+- "vite": "^5.0.0" (NOT 2.x, NOT 3.x, NOT 4.x - ONLY 5.0.0+)
+- "@vitejs/plugin-react": "^4.0.0"
+- "typescript": "^5.0.0"
+- "react": "^18.2.0"
+- "react-dom": "^18.2.0"
+
+Using older versions (especially Vite 2.x) will cause FATAL ERRORS. The application WILL NOT RUN.
+Double-check your package.json before returning it!
+
 PROJECT TYPE DETECTION:
 Detect the requested project type from the user's prompt:
 
@@ -130,7 +141,7 @@ A) REACT/VITE PROJECTS (when user mentions React, Vite, or modern frameworks):
    - Include index.html as entry point
    - Use TypeScript (.tsx) for React components
    
-   Example package.json for React + Vite:
+   REQUIRED package.json template (USE THESE EXACT VERSIONS):
    {
      "name": "app-name",
      "version": "1.0.0",

@@ -1220,13 +1220,23 @@ function IDEWithAuth() {
 
   // Render IDE with authenticated user (real or fallback)
   // User is guaranteed non-null here, so WorkspaceAwarenessProvider gets valid props
-  return (
-    <WorkspaceAwarenessProvider
-      workspaceId={workspaceId}
-      userId={user.id}
-      username={user.username}
-    >
-      <IDEContent workspaceId={workspaceId} />
-    </WorkspaceAwarenessProvider>
-  );
+  
+  // TEMPORARILY DISABLED: Yjs collaborative editing (Ubuntu compatibility fix)
+  // Re-enable when backend Yjs WebSocket proxy is properly configured
+  const ENABLE_YJS_COLLABORATION = false;
+  
+  if (ENABLE_YJS_COLLABORATION) {
+    return (
+      <WorkspaceAwarenessProvider
+        workspaceId={workspaceId}
+        userId={user.id}
+        username={user.username}
+      >
+        <IDEContent workspaceId={workspaceId} />
+      </WorkspaceAwarenessProvider>
+    );
+  }
+  
+  // Run without collaborative features
+  return <IDEContent workspaceId={workspaceId} />;
 }
