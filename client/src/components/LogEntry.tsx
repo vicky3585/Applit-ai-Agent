@@ -3,7 +3,8 @@
  * Displays a single structured log entry with level-based icons and colors
  */
 
-import { AlertCircle, CheckCircle, Info, AlertTriangle, Bug } from "lucide-react";
+import { useState } from "react";
+import { AlertCircle, CheckCircle, Info, AlertTriangle, Bug, Terminal, ChevronDown, ChevronRight } from "lucide-react";
 import type { LogEntry as LogEntryType } from "@shared/schema";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +46,22 @@ const levelConfig = {
   },
 };
 
+interface CommandMetadata {
+  command?: string;
+  exitCode?: number;
+  stdout?: string;
+  stderr?: string;
+  duration?: number;
+}
+
+function isCommandMetadata(metadata: any): metadata is CommandMetadata {
+  return metadata && 'command' in metadata;
+}
+
 export function LogEntry({ entry, onClick }: LogEntryProps) {
+  const [stdoutExpanded, setStdoutExpanded] = useState(false);
+  const [stderrExpanded, setStderrExpanded] = useState(false);
+  
   const config = levelConfig[entry.level];
   const Icon = config.icon;
   
@@ -54,6 +70,8 @@ export function LogEntry({ entry, onClick }: LogEntryProps) {
     minute: '2-digit',
     second: '2-digit',
   });
+
+  const isCommandLog = entry.phase === "command_execution" && isCommandMetadata(entry.metadata);
 
   return (
     <div
@@ -79,7 +97,73 @@ export function LogEntry({ entry, onClick }: LogEntryProps) {
           {entry.message}
         </p>
         
-        {entry.metadata && Object.keys(entry.metadata).length > 0 && (
+        {/* Enhanced Command Execution Display */}
+        {isCommandLog && entry.metadata && (
+          <div className="mt-2 space-y-2">
+            <div className="flex items-center gap-2 text-xs">
+              <Terminal className="w-3 h-3" />
+              <code className="font-mono bg-muted px-1.5 py-0.5 rounded">
+                {entry.metadata.command}
+              </code>
+              <span className={cn(
+                "px-1.5 py-0.5 rounded font-medium",
+                entry.metadata.exitCode === 0 
+                  ? "bg-green-100 dark:bg-green-950 text-green-700 dark:text-green-400" 
+                  : "bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-400"
+              )}>
+                Exit {entry.metadata.exitCode}
+              </span>
+              {entry.metadata.duration !== undefined && (
+                <span className="text-muted-foreground">
+                  ({entry.metadata.duration}ms)
+                </span>
+              )}
+            </div>
+            
+            {entry.metadata.stdout && entry.metadata.stdout.trim() && (
+              <div className="space-y-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setStdoutExpanded(!stdoutExpanded);
+                  }}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  {stdoutExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  <span>stdout ({entry.metadata.stdout.split('\n').length} lines)</span>
+                </button>
+                {stdoutExpanded && (
+                  <pre className="text-xs p-2 rounded bg-muted/50 overflow-x-auto font-mono max-h-48 overflow-y-auto border">
+                    {entry.metadata.stdout}
+                  </pre>
+                )}
+              </div>
+            )}
+            
+            {entry.metadata.stderr && entry.metadata.stderr.trim() && (
+              <div className="space-y-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setStderrExpanded(!stderrExpanded);
+                  }}
+                  className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"
+                >
+                  {stderrExpanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                  <span>stderr ({entry.metadata.stderr.split('\n').length} lines)</span>
+                </button>
+                {stderrExpanded && (
+                  <pre className="text-xs p-2 rounded bg-red-50 dark:bg-red-950/20 overflow-x-auto font-mono max-h-48 overflow-y-auto border border-red-200 dark:border-red-900">
+                    {entry.metadata.stderr}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {/* Generic Metadata Display (for non-command logs) */}
+        {entry.metadata && Object.keys(entry.metadata).length > 0 && !isCommandLog && (
           <details className="mt-2 text-xs">
             <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
               Metadata

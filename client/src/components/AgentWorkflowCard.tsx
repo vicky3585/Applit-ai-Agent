@@ -312,6 +312,7 @@ export default function AgentWorkflowCard({ workflowState, onFileClick }: AgentW
                     <option value="testing">Testing</option>
                     <option value="fixing">Fixing</option>
                     <option value="package_install">Package Install</option>
+                    <option value="command_execution">Command Execution</option>
                     <option value="dev_server">Dev Server</option>
                     <option value="complete">Complete</option>
                   </select>

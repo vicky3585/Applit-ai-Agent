@@ -22,6 +22,7 @@ const phaseLabels: Record<LogPhase, string> = {
   testing: "Testing",
   fixing: "Fixing",
   package_install: "Package Installation",
+  command_execution: "Command Execution",
   dev_server: "Dev Server",
   complete: "Complete",
 };
@@ -33,6 +34,7 @@ const phaseColors: Record<LogPhase, string> = {
   testing: "text-yellow-600 dark:text-yellow-400",
   fixing: "text-orange-600 dark:text-orange-400",
   package_install: "text-green-600 dark:text-green-400",
+  command_execution: "text-indigo-600 dark:text-indigo-400",
   dev_server: "text-cyan-600 dark:text-cyan-400",
   complete: "text-emerald-600 dark:text-emerald-400",
 };
