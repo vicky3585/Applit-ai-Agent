@@ -4,13 +4,41 @@ export class WebSocketClient {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private listeners: Map<string, Set<(data: any) => void>> = new Map();
+  private wsToken: string | null = null;
 
   constructor(workspaceId: string) {
     this.workspaceId = workspaceId;
     this.connect();
   }
 
-  private connect() {
+  private async fetchToken(): Promise<string | null> {
+    try {
+      const response = await fetch("/api/auth/ws-token", {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        console.error("Failed to fetch WebSocket token");
+        return null;
+      }
+      const data = await response.json();
+      return data.token;
+    } catch (error) {
+      console.error("Error fetching WebSocket token:", error);
+      return null;
+    }
+  }
+
+  private async connect() {
+    // Fetch authentication token first
+    if (!this.wsToken) {
+      this.wsToken = await this.fetchToken();
+      if (!this.wsToken) {
+        console.error("Cannot connect WebSocket without authentication token");
+        setTimeout(() => this.attemptReconnect(), 2000);
+        return;
+      }
+    }
+
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     
@@ -20,10 +48,11 @@ export class WebSocketClient {
       console.log("WebSocket connected");
       this.reconnectAttempts = 0;
       
-      // Join workspace
+      // Join workspace with authentication token
       this.send({
         type: "join",
         workspaceId: this.workspaceId,
+        token: this.wsToken,
       });
     };
 

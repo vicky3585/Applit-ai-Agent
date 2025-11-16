@@ -59,112 +59,141 @@ export function WorkspaceAwarenessProvider({
   useEffect(() => {
     mountedRef.current = true;
 
-    // Create workspace-level Y.Doc (separate from file docs)
-    const ydoc = new Y.Doc();
-    ydocRef.current = ydoc;
-
-    // Construct WebSocket URL for workspace presence
-    // Use window.location.host (includes port) for proper WebSocket connection
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.host; // Includes port (e.g., "localhost:5000")
-    const baseUrl = `${protocol}//${host}`;
-    const roomname = `yjs/${workspaceId}/workspace-presence`;
-
-    // Create WebSocket provider for workspace presence
-    const provider = new WebsocketProvider(
-      baseUrl,
-      roomname,
-      ydoc,
-      {
-        params: {
-          userId,
-          username,
-        },
-      }
-    );
-    providerRef.current = provider;
-    setAwareness(provider.awareness); // Set in state for re-renders
-
-    // Set initial local presence
-    provider.awareness.setLocalStateField("user", {
-      userId,
-      name: username,
-      color: getUserColor(userId),
-      activeFile: null,
-      activeFileName: null,
-      connected: true,
-      lastUpdate: Date.now(),
-    });
-
-    // Listen for awareness changes from all users
-    const handleAwarenessUpdate = () => {
-      if (!mountedRef.current) return;
-
-      const states = provider.awareness.getStates();
-      const usersMap = new Map<string, WorkspaceUserPresence>(); // Key by userId, not clientId
-
-      states.forEach((state: any) => {
-        if (state.user && state.user.userId) {
-          // Use userId as key for stable identity across reconnects
-          usersMap.set(state.user.userId, {
-            ...state.user,
-            connected: true,
-          });
+    // Fetch authentication token and initialize provider
+    async function initializeProvider() {
+      // Fetch WebSocket authentication token
+      let token: string | null = null;
+      try {
+        const response = await fetch("/api/auth/ws-token", { credentials: "include" });
+        if (response.ok) {
+          const data = await response.json();
+          token = data.token;
         }
+      } catch (error) {
+        console.error("[WorkspaceAwareness] Failed to fetch auth token:", error);
+      }
+
+      if (!token) {
+        console.error("[WorkspaceAwareness] Cannot connect without authentication token");
+        return;
+      }
+
+      // Create workspace-level Y.Doc (separate from file docs)
+      const ydoc = new Y.Doc();
+      ydocRef.current = ydoc;
+
+      // Construct WebSocket URL for workspace presence
+      // Use window.location.host (includes port) for proper WebSocket connection
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host; // Includes port (e.g., "localhost:5000")
+      const baseUrl = `${protocol}//${host}`;
+      const roomname = `yjs/${workspaceId}/workspace-presence`;
+
+      // Create WebSocket provider for workspace presence with authentication
+      const provider = new WebsocketProvider(
+        baseUrl,
+        roomname,
+        ydoc,
+        {
+          params: {
+            token, // Authentication token
+            userId,
+            username,
+          },
+        }
+      );
+      providerRef.current = provider;
+      setAwareness(provider.awareness); // Set in state for re-renders
+
+      // Set initial local presence
+      provider.awareness.setLocalStateField("user", {
+        userId,
+        name: username,
+        color: getUserColor(userId),
+        activeFile: null,
+        activeFileName: null,
+        connected: true,
+        lastUpdate: Date.now(),
       });
 
-      // Convert Map to Array for consumers
-      setUsers(Array.from(usersMap.values()));
-    };
+      // Listen for awareness changes from all users
+      const handleAwarenessUpdate = () => {
+        if (!mountedRef.current) return;
 
-    provider.awareness.on("change", handleAwarenessUpdate);
+        const states = provider.awareness.getStates();
+        const usersMap = new Map<string, WorkspaceUserPresence>(); // Key by userId, not clientId
 
-    // Listen for connection status changes
-    const handleStatusChange = ({ status }: { status: string }) => {
-      if (!mountedRef.current) return;
-      
-      // Update local presence connection status
-      const awareness = provider.awareness;
-      const currentState = awareness.getLocalState();
-      if (currentState?.user) {
-        awareness.setLocalStateField("user", {
-          ...currentState.user,
-          connected: status === "connected",
-          lastUpdate: Date.now(),
+        states.forEach((state: any) => {
+          if (state.user && state.user.userId) {
+            // Use userId as key for stable identity across reconnects
+            usersMap.set(state.user.userId, {
+              ...state.user,
+              connected: true,
+            });
+          }
         });
-      }
-      
-      // Mark disconnected peers as disconnected
-      if (status === "disconnected") {
-        handleAwarenessUpdate();
-      }
-    };
 
-    provider.on("status", handleStatusChange);
+        // Convert Map to Array for consumers
+        setUsers(Array.from(usersMap.values()));
+      };
 
-    // Initial update
-    handleAwarenessUpdate();
+      provider.awareness.on("change", handleAwarenessUpdate);
 
-    // Cleanup
+      // Listen for connection status changes
+      const handleStatusChange = ({ status }: { status: string }) => {
+        if (!mountedRef.current) return;
+        
+        // Update local presence connection status
+        const awareness = provider.awareness;
+        const currentState = awareness.getLocalState();
+        if (currentState?.user) {
+          awareness.setLocalStateField("user", {
+            ...currentState.user,
+            connected: status === "connected",
+            lastUpdate: Date.now(),
+          });
+        }
+        
+        // Mark disconnected peers as disconnected
+        if (status === "disconnected") {
+          handleAwarenessUpdate();
+        }
+      };
+
+      provider.on("status", handleStatusChange);
+
+      // Initial update
+      handleAwarenessUpdate();
+
+      // Cleanup
+      return () => {
+        mountedRef.current = false;
+        
+        // Remove listeners
+        provider.awareness.off("change", handleAwarenessUpdate);
+        provider.off("status", handleStatusChange);
+        
+        // Clear local presence before destroying
+        if (provider.awareness) {
+          provider.awareness.setLocalState(null);
+        }
+
+        // Destroy provider and doc
+        provider.destroy();
+        ydoc.destroy();
+        
+        ydocRef.current = null;
+        providerRef.current = null;
+        setAwareness(null);
+      };
+    }
+
+    // Call the async initialization
+    initializeProvider();
+
+    // Cleanup on unmount
     return () => {
       mountedRef.current = false;
-      
-      // Remove listeners
-      provider.awareness.off("change", handleAwarenessUpdate);
-      provider.off("status", handleStatusChange);
-      
-      // Clear local presence before destroying
-      if (provider.awareness) {
-        provider.awareness.setLocalState(null);
-      }
-
-      // Destroy provider and doc
-      provider.destroy();
-      ydoc.destroy();
-      
-      ydocRef.current = null;
-      providerRef.current = null;
-      setAwareness(null);
     };
   }, [workspaceId, userId, username]);
 

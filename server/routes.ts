@@ -420,6 +420,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     });
   });
 
+  // GET /api/auth/ws-token - Get WebSocket authentication token
+  app.get("/api/auth/ws-token", async (req, res) => {
+    // For now, generate token for default user1
+    // TODO: In production, get userId from authenticated session
+    const user = {
+      id: "user1",
+      username: "Anonymous",
+    };
+    
+    // Generate short-lived JWT token for WebSocket authentication
+    const { signAccessToken } = await import("./auth");
+    const token = signAccessToken(user as any);
+    
+    res.json({ token });
+  });
+
   // ========================================
   // Multi-Project Management (Task V1-7)
   // ========================================
