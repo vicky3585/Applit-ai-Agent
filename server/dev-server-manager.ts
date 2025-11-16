@@ -234,7 +234,7 @@ export class DevServerManager {
    * Cleanup all servers
    */
   async cleanup(): Promise<void> {
-    for (const [workspaceId, server] of this.servers) {
+    for (const [workspaceId] of Array.from(this.servers.entries())) {
       await this.stopServer(workspaceId);
     }
     console.log(`[DevServer] Cleaned up all servers`);

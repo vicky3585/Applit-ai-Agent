@@ -650,15 +650,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // STEP 1: Check if dev server is running (highest priority)
     try {
       const { getDevServerManager } = await import("./dev-server-manager");
+      const { ENV_CONFIG } = await import("@shared/environment");
       const manager = getDevServerManager();
       const devServer = manager.getServer(workspaceId);
       
       if (devServer && devServer.url) {
-        // Dev server is running - use proxy URL
-        const proxyUrl = `${baseUrl}/preview/${workspaceId}/`;
-        console.log(`[Preview URL] Dev server detected (${devServer.type}), returning proxy URL: ${proxyUrl}`);
+        // On Ubuntu/local: Return direct dev server URL (http://localhost:3000)
+        // On Replit: Return proxy URL (for same-origin policy)
+        const previewUrl = ENV_CONFIG.env === "local" 
+          ? devServer.url 
+          : `${baseUrl}/preview/${workspaceId}/`;
+        
+        console.log(`[Preview URL] Dev server detected (${devServer.type} on ${ENV_CONFIG.env}), returning: ${previewUrl}`);
         return res.json({ 
-          url: proxyUrl,
+          url: previewUrl,
           hasDevServer: true,
           devServerType: devServer.type,
           devServerPort: devServer.port,
