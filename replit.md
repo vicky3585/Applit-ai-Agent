@@ -52,6 +52,7 @@ The frontend uses React 18, TypeScript, and Vite, styled with Shadcn/ui (Radix U
 - **Hot Reload System:** Uses chokidar for file watching and WebSockets for real-time preview updates.
 - **Dev Server Manager:** Automatically detects application types (Node.js, Python, Vite, static HTML) and spawns development servers with port management.
 - **Code Execution System:** Docker-based sandbox for isolated, multi-language code execution (JavaScript, Python, Go, Rust, C/C++, Java, Ruby, PHP, Shell) with real-time output streaming.
+- **Live Preview System (FIXED - November 16, 2024):** Iframe-compatible preview with Vite HMR client script stripping. Uses http-proxy-middleware with responseInterceptor to remove `/@vite/client` script injection from HTML responses, preventing WebSocket connection errors in sandboxed iframe environments. Matches Replit's preview behavior by disabling HMR client while maintaining full app functionality.
 - **Developer Tools:** Includes a Package Manager UI (npm, pip, apt), Project Templates, GitHub & Git Integration, Live Preview Pane, Settings Modal, Command Palette, and Keyboard Shortcuts.
 
 **Multiplayer Foundation:**

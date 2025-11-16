@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { Router } from "express";
 import { createServer, type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
-import { createProxyMiddleware } from "http-proxy-middleware";
+import { createProxyMiddleware, responseInterceptor } from "http-proxy-middleware";
 import { storage } from "./storage-factory";
 import { sandbox } from "./sandbox";
 import OpenAI from "openai";
@@ -716,13 +716,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
         target: devServer.url,
         changeOrigin: true,
         ws: true, // WebSocket support for HMR
+        selfHandleResponse: true, // Required for response interception
         pathRewrite: (path) => {
           // Remove /preview/:workspaceId prefix, ensure we always return at least '/'
           const rewritten = path.replace(`/preview/${workspaceId}`, '') || '/';
           return rewritten;
         },
-        onError: (err, _req, _res) => {
-          console.error('[Preview Proxy] Error:', err.message);
+        on: {
+          proxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+            // Strip Vite HMR client from HTML responses to prevent iframe rendering issues
+            const contentType = proxyRes.headers['content-type'] || '';
+            if (contentType.includes('text/html')) {
+              const html = responseBuffer.toString('utf8');
+              // Remove Vite client script injection (causes iframe rendering to fail)
+              const cleanedHtml = html.replace(
+                /<script type="module" src="\/@vite\/client"><\/script>\s*/g,
+                ''
+              );
+              return cleanedHtml;
+            }
+            // Return other content types unchanged
+            return responseBuffer;
+          }),
+          error: (err, _req, _res) => {
+            console.error('[Preview Proxy] Error:', err.message);
+          },
         },
       });
       
@@ -2078,7 +2096,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
         
         // Perform the upgrade
-        wsProxy.upgrade!(req, socket, head);
+        wsProxy.upgrade!(req, socket as any, head);
         return;
       }
     }
@@ -2087,7 +2105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     for (const { path, proxy } of proxies) {
       if (url.startsWith(path)) {
         console.log(`[Proxy] Upgrading WebSocket for ${path}`);
-        proxy.upgrade!(req, socket, head);
+        proxy.upgrade!(req, socket as any, head);
         return;
       }
     }
