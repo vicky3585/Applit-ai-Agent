@@ -16,25 +16,47 @@ export interface AIClientOptions {
  * In hybrid mode:
  * - Uses vLLM for cheap operations (planning, testing)
  * - Falls back to OpenAI for critical operations (code generation)
+ * 
+ * Priority order:
+ * 1. Explicit forceProvider option (highest priority)
+ * 2. Environment AI_PROVIDER setting
+ * 3. Default to OpenAI if vLLM unavailable
  */
 export function createAIClient(options?: AIClientOptions): OpenAI {
-  const provider = options?.forceProvider || ENV_CONFIG.ai.provider;
-  
-  // Determine which API to use
-  const useVLLM = 
-    provider === "vllm" || 
-    (provider === "hybrid" && ENV_CONFIG.ai.vllmAvailable && !options?.forceProvider);
-
-  if (useVLLM && ENV_CONFIG.ai.vllmAvailable) {
-    console.log(`[AI Client] Using vLLM at ${process.env.VLLM_API_BASE}`);
+  // Step 1: Honor explicit provider override
+  if (options?.forceProvider === "vllm" && ENV_CONFIG.ai.vllmAvailable) {
+    console.log(`[AI Client] Using vLLM (explicit override) at ${process.env.VLLM_API_BASE}`);
     return new OpenAI({
       apiKey: "EMPTY", // vLLM doesn't require authentication
       baseURL: process.env.VLLM_API_BASE,
     });
   }
+  
+  if (options?.forceProvider === "openai") {
+    console.log(`[AI Client] Using OpenAI (explicit override)`);
+    return new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  
+  // Step 2: Check environment configuration
+  const envProvider = ENV_CONFIG.ai.provider;
+  
+  // Use vLLM if: provider is "vllm" OR (provider is "hybrid" AND vLLM is available)
+  const shouldUseVLLM = 
+    (envProvider === "vllm" || envProvider === "hybrid") && 
+    ENV_CONFIG.ai.vllmAvailable;
 
-  // Fall back to OpenAI
-  console.log(`[AI Client] Using OpenAI API`);
+  if (shouldUseVLLM) {
+    console.log(`[AI Client] Using vLLM (${envProvider} mode) at ${process.env.VLLM_API_BASE}`);
+    return new OpenAI({
+      apiKey: "EMPTY",
+      baseURL: process.env.VLLM_API_BASE,
+    });
+  }
+
+  // Step 3: Fall back to OpenAI
+  console.log(`[AI Client] Using OpenAI API (${envProvider} mode, vLLM unavailable: ${!ENV_CONFIG.ai.vllmAvailable})`);
   return new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
