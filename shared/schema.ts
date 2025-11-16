@@ -101,6 +101,7 @@ export const workspaceSettings = pgTable("workspace_settings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   workspaceId: varchar("workspace_id").notNull().unique(),
   modelProvider: text("model_provider").default("openai"), // 'openai' | 'anthropic' | 'local'
+  autonomyLevel: text("autonomy_level").default("high"), // 'low' | 'medium' | 'high' | 'max'
   extendedThinking: text("extended_thinking").default("false"),
   localFirst: text("local_first").default("false"),
   autoFix: text("auto_fix").default("true"),

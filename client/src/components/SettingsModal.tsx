@@ -33,6 +33,7 @@ export default function SettingsModal({ open = false, onClose, workspaceId }: Se
   const [apiKeyStatus, setApiKeyStatus] = useState<{ configured: boolean; keyType: string } | null>(null);
   const [settings, setSettings] = useState({
     modelProvider: "openai",
+    autonomyLevel: "medium",
     extendedThinking: false,
     localFirst: false,
     autoFix: true,
@@ -55,6 +56,7 @@ export default function SettingsModal({ open = false, onClose, workspaceId }: Se
       if (data && data.modelProvider) {
         setSettings({
           modelProvider: data.modelProvider || "openai",
+          autonomyLevel: data.autonomyLevel || "medium",
           extendedThinking: data.extendedThinking === "true",
           localFirst: data.localFirst === "true",
           autoFix: data.autoFix === "true",
@@ -86,6 +88,7 @@ export default function SettingsModal({ open = false, onClose, workspaceId }: Se
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           modelProvider: settings.modelProvider,
+          autonomyLevel: settings.autonomyLevel,
           extendedThinking: String(settings.extendedThinking),
           localFirst: String(settings.localFirst),
           autoFix: String(settings.autoFix),
@@ -184,6 +187,27 @@ export default function SettingsModal({ open = false, onClose, workspaceId }: Se
           <div>
             <h3 className="text-sm font-semibold mb-4">Agent Behavior</h3>
             <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="autonomy-level">Autonomy Level (Week 1 Priority #2)</Label>
+                <Select 
+                  value={settings.autonomyLevel}
+                  onValueChange={(value) => setSettings({ ...settings, autonomyLevel: value })}
+                >
+                  <SelectTrigger id="autonomy-level" data-testid="select-autonomy-level">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low - Ask before each change</SelectItem>
+                    <SelectItem value="medium">Medium - Work in 5-min bursts, then ask</SelectItem>
+                    <SelectItem value="high">High - Work until done, show progress</SelectItem>
+                    <SelectItem value="max">Max - Fully autonomous, report final result</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Control how independently the AI agent works
+                </p>
+              </div>
+
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label htmlFor="extended-thinking">Extended Thinking</Label>

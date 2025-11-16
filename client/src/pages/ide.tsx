@@ -1221,9 +1221,9 @@ function IDEWithAuth() {
   // Render IDE with authenticated user (real or fallback)
   // User is guaranteed non-null here, so WorkspaceAwarenessProvider gets valid props
   
-  // TEMPORARILY DISABLED: Yjs collaborative editing (Ubuntu compatibility fix)
-  // Re-enable when backend Yjs WebSocket proxy is properly configured
-  const ENABLE_YJS_COLLABORATION = false;
+  // Real-time collaborative editing enabled (Week 1 Priority #1)
+  // Yjs WebSocket on /yjs/* paths, main WebSocket on /ws
+  const ENABLE_YJS_COLLABORATION = true;
   
   if (ENABLE_YJS_COLLABORATION) {
     return (

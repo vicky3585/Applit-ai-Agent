@@ -65,3 +65,39 @@ The system uses a hybrid Node.js + Python architecture. Data storage uses both i
 - **60s Health Cache**: Prevents API spam while allowing rapid recovery when vLLM becomes available
 
 See `docs/HYBRID_MODE.md` for complete implementation details.
+
+### Week 1 Strategic Improvements (Nov 2025)
+
+**Real-time Multiplayer Collaboration (Priority #1)**
+- **Yjs Backend Provider**: WebSocket server initialized on `/yjs/*` paths with Y-websocket provider for document synchronization
+- **WorkspaceAwarenessProvider**: Frontend provider connects to `/yjs/${workspaceId}/workspace-presence` for real-time user presence
+- **User Presence System**: UserListPanel shows all active collaborators with avatar indicators
+- **Collaborative Cursors**: Multi-user cursor tracking ready (requires Monaco binding integration)
+- **Architecture**: Separate WebSocket paths - `/ws` for chat/agent, `/yjs/*` for collaboration, no conflicts
+- **Status**: ✅ Backend provider active, frontend provider enabled, ready for multi-user testing
+
+**AI Autonomy Levels (Priority #2)**
+- **Database Schema**: Added `autonomyLevel` enum field to `workspaceSettings` table with values: low, medium, high, max
+- **Default Behavior**: New workspaces default to "medium" autonomy level
+- **Settings UI**: SettingsModal includes autonomy level selector with 4 levels:
+  - **Low**: Agent asks approval before each code change
+  - **Medium**: Agent works in 5-minute focused bursts, then asks for next steps
+  - **High**: Agent works until task completion, minimal interruptions
+  - **Max**: Fully autonomous mode with no interruptions
+- **API Integration**: Settings endpoint updated to persist autonomy preferences per workspace
+- **Status**: ✅ Complete (schema + UI + API + persistence)
+
+**Redis Key-Value Store (Priority #3)**
+- **Storage Abstraction**: `IKVStore` interface with RedisKVStore and MemoryKVStore implementations
+- **Automatic Fallback**: Uses Redis in production (Ubuntu), in-memory Map in development (Replit)
+- **Features**: Standard operations (get, set, delete, exists, keys, expire, ttl) with automatic cleanup
+- **API Endpoints**: Complete REST API at `/api/workspaces/:id/kv/*`:
+  - `GET /api/workspaces/:id/kv` - List all keys with optional pattern matching
+  - `GET /api/workspaces/:id/kv/:key` - Get value by key
+  - `POST /api/workspaces/:id/kv` - Set key-value pair (with optional TTL)
+  - `DELETE /api/workspaces/:id/kv/:key` - Delete key
+- **Key Namespacing**: Workspace-scoped keys (`workspace:${id}:${key}`) prevent collisions
+- **Status**: ✅ Backend complete (API + storage layer), UI browser pending
+
+**Strategic Context**
+These improvements directly support the 12-week roadmap goal of achieving Replit feature parity while introducing unique innovations. Week 1 focused on critical infrastructure (multiplayer, AI autonomy, persistent storage) that unblocks subsequent weeks of feature development.

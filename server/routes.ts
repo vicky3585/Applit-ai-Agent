@@ -14,14 +14,15 @@ import * as github from "./github";
 import * as git from "./git";
 import { initializeYjsProvider } from "./yjs-provider";
 import * as path from "path";
+import { verifyAccessToken } from "./auth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
   // Initialize Yjs provider for real-time collaborative editing (Phase 7)
-  // TEMPORARILY DISABLED on Ubuntu to fix WebSocket conflicts - AI agent priority
-  // const yjsProvider = initializeYjsProvider(httpServer, await storage);
-  console.log("[Phase 7] Yjs collaborative editing DISABLED (Ubuntu compatibility fix)");
+  // Handles WebSocket upgrades on /yjs/* paths (separate from /ws)
+  const yjsProvider = initializeYjsProvider(httpServer, await storage);
+  console.log("[Phase 7] Yjs collaborative editing ENABLED (Week 1 Priority #1)");
   
   // WebSocket server for real-time communication
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
@@ -51,21 +52,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (data.type === "join" && typeof data.workspaceId === "string") {
           const wsId = data.workspaceId;
-          const uid = data.userId || "user1"; // Default to user1 for now (TODO: extract from auth session)
+          
+          // SECURITY: Authenticate user via JWT token
+          const token = data.token;
+          if (!token) {
+            console.error("[WebSocket] Join rejected - no authentication token provided");
+            ws.send(JSON.stringify({ type: "error", error: "Authentication required" }));
+            ws.close();
+            return;
+          }
+          
+          let authenticatedUserId: string;
+          try {
+            const payload = verifyAccessToken(token);
+            authenticatedUserId = payload.userId;
+          } catch (error) {
+            console.error("[WebSocket] Join rejected - invalid token:", error);
+            ws.send(JSON.stringify({ type: "error", error: "Invalid authentication token" }));
+            ws.close();
+            return;
+          }
           
           // SECURITY: Validate workspace ownership before allowing join
           const workspace = await storage.getWorkspace(wsId);
           if (!workspace) {
             console.warn(`[WebSocket] Workspace ${wsId} not found, rejecting join`);
+            ws.send(JSON.stringify({ type: "error", error: "Workspace not found" }));
             ws.close();
             return;
           }
           
-          if (workspace.userId !== uid) {
-            console.warn(`[WebSocket] User ${uid} attempted to join workspace ${wsId} owned by ${workspace.userId}, rejecting`);
+          if (workspace.userId !== authenticatedUserId) {
+            console.warn(`[WebSocket] User ${authenticatedUserId} attempted to join workspace ${wsId} owned by ${workspace.userId}, rejecting`);
+            ws.send(JSON.stringify({ type: "error", error: "Access denied" }));
             ws.close();
             return;
           }
+          
+          const uid = authenticatedUserId;
           
           workspaceId = wsId;
           userId = uid;
@@ -2055,6 +2079,153 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     } catch (error: any) {
       console.error("[Git] Set remote error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== Key-Value Store API (Week 1 Priority #3) ====================
+  // Redis-backed KV store with in-memory fallback for development
+
+  const kvStore = await import("./kv-store").then(m => m.kvStorePromise);
+
+  // GET /api/workspaces/:id/kv - List all keys (with optional pattern)
+  app.get("/api/workspaces/:id/kv", authMiddleware, async (req: any, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const userPattern = (req.query.pattern as string) || "*";
+      
+      // SECURITY: Validate workspace ownership
+      const workspace = await storage.getWorkspace(workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      if (workspace.userId !== req.user.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // SECURITY: Force workspace-scoped pattern to prevent cross-workspace access
+      const safePattern = `workspace:${workspaceId}:${userPattern}`;
+      
+      const keys = await kvStore.keys(safePattern);
+      
+      // Get values for all keys and strip workspace prefix from key names
+      const entries = await Promise.all(
+        keys.map(async (key) => {
+          const userKey = key.replace(`workspace:${workspaceId}:`, '');
+          return {
+            key: userKey,
+            value: await kvStore.get(key),
+            ttl: await kvStore.ttl(key),
+          };
+        })
+      );
+      
+      res.json({ entries, count: entries.length });
+    } catch (error: any) {
+      console.error("[KV] List keys error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // GET /api/workspaces/:id/kv/:key - Get value by key
+  app.get("/api/workspaces/:id/kv/:key", authMiddleware, async (req: any, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const userKey = req.params.key;
+      
+      // SECURITY: Validate workspace ownership
+      const workspace = await storage.getWorkspace(workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      if (workspace.userId !== req.user.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // SECURITY: Validate key to prevent path traversal or namespace escape
+      if (!userKey || userKey.includes('..') || userKey.startsWith('workspace:')) {
+        return res.status(400).json({ error: "Invalid key format" });
+      }
+      
+      const key = `workspace:${workspaceId}:${userKey}`;
+      const value = await kvStore.get(key);
+      
+      if (value === null) {
+        return res.status(404).json({ error: "Key not found" });
+      }
+      
+      const ttl = await kvStore.ttl(key);
+      res.json({ key: userKey, value, ttl });
+    } catch (error: any) {
+      console.error("[KV] Get error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // POST /api/workspaces/:id/kv - Set key-value pair
+  app.post("/api/workspaces/:id/kv", authMiddleware, async (req: any, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const { key: userKey, value, ttl } = req.body;
+      
+      // SECURITY: Validate workspace ownership
+      const workspace = await storage.getWorkspace(workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      if (workspace.userId !== req.user.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      if (!userKey || value === undefined) {
+        return res.status(400).json({ error: "Key and value are required" });
+      }
+      
+      // SECURITY: Validate key to prevent namespace escape
+      if (userKey.includes('..') || userKey.startsWith('workspace:')) {
+        return res.status(400).json({ error: "Invalid key format" });
+      }
+      
+      // Validate TTL if provided
+      if (ttl !== undefined && (typeof ttl !== 'number' || ttl < 0)) {
+        return res.status(400).json({ error: "TTL must be a positive number" });
+      }
+      
+      const key = `workspace:${workspaceId}:${userKey}`;
+      await kvStore.set(key, String(value), ttl);
+      
+      res.json({ success: true, key: userKey, value });
+    } catch (error: any) {
+      console.error("[KV] Set error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // DELETE /api/workspaces/:id/kv/:key - Delete key
+  app.delete("/api/workspaces/:id/kv/:key", authMiddleware, async (req: any, res) => {
+    try {
+      const workspaceId = req.params.id;
+      const userKey = req.params.key;
+      
+      // SECURITY: Validate workspace ownership
+      const workspace = await storage.getWorkspace(workspaceId);
+      if (!workspace) {
+        return res.status(404).json({ error: "Workspace not found" });
+      }
+      if (workspace.userId !== req.user.userId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+      
+      // SECURITY: Validate key to prevent namespace escape
+      if (!userKey || userKey.includes('..') || userKey.startsWith('workspace:')) {
+        return res.status(400).json({ error: "Invalid key format" });
+      }
+      
+      const key = `workspace:${workspaceId}:${userKey}`;
+      await kvStore.delete(key);
+      res.json({ success: true, key: userKey });
+    } catch (error: any) {
+      console.error("[KV] Delete error:", error);
       res.status(500).json({ error: error.message });
     }
   });

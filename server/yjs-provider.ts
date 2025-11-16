@@ -5,6 +5,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { Server as HttpServer } from "http";
 import type { IStorage } from "./storage";
 import { encoding, decoding } from "lib0";
+import { verifyAccessToken } from "./auth";
 
 /**
  * Yjs WebSocket Provider for Real-Time Collaborative Editing (Phase 7)
@@ -46,13 +47,40 @@ export class YjsProvider {
     httpServer.on("upgrade", (request, socket, head) => {
       const pathname = new URL(request.url!, "http://localhost").pathname;
       
-      // Accept any path starting with /yjs
+      // Accept any path starting with /yjs (with authentication)
       if (pathname.startsWith("/yjs")) {
         console.log(`[YjsProvider] WebSocket upgrade request: ${pathname}`);
         
-        this.wss!.handleUpgrade(request, socket, head, (conn) => {
-          this.wss!.emit("connection", conn, request);
-        });
+        // SECURITY: Authenticate WebSocket connection
+        try {
+          const url = new URL(request.url!, "http://localhost");
+          const token = url.searchParams.get("token") || 
+                        request.headers.authorization?.replace("Bearer ", "");
+          
+          if (!token) {
+            console.error("[YjsProvider] Authentication required - no token provided");
+            socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+            socket.destroy();
+            return;
+          }
+          
+          // Verify JWT token
+          const payload = verifyAccessToken(token);
+          
+          // Attach authenticated user to request for later use
+          (request as any).user = {
+            userId: payload.userId,
+            username: payload.username,
+          };
+          
+          this.wss!.handleUpgrade(request, socket, head, (conn) => {
+            this.wss!.emit("connection", conn, request);
+          });
+        } catch (error) {
+          console.error("[YjsProvider] Authentication failed:", error);
+          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+          socket.destroy();
+        }
       }
       // Otherwise, let other handlers deal with it
     });
@@ -76,17 +104,39 @@ export class YjsProvider {
   private async setupWSConnection(conn: WebSocket, req: any) {
     conn.binaryType = "arraybuffer";
 
-    // Parse URL: /yjs/workspaceId/docName?userId=...&username=...
+    // Parse URL: /yjs/workspaceId/docName
     const url = new URL(req.url, "http://localhost");
     const pathParts = url.pathname.split("/").filter(Boolean); // ["yjs", "workspaceId", "docName"]
     
     const workspaceId = pathParts[1] || "default-workspace";
     const docName = pathParts.slice(2).join("/") || "default.txt"; // Support nested paths
-    const userId = url.searchParams.get("userId") || "anonymous";
-    const username = url.searchParams.get("username") || "Anonymous";
+    
+    // SECURITY: Use authenticated user from JWT, not query params
+    const userId = req.user?.userId;
+    const username = req.user?.username || "Anonymous";
+    
+    if (!userId) {
+      console.error("[YjsProvider] No authenticated user, rejecting connection");
+      conn.close();
+      return;
+    }
+
+    // SECURITY: Validate workspace ownership/access
+    const workspace = await this.storage.getWorkspace(workspaceId);
+    if (!workspace) {
+      console.warn(`[YjsProvider] Workspace ${workspaceId} not found, rejecting connection`);
+      conn.close();
+      return;
+    }
+    
+    if (workspace.userId !== userId) {
+      console.warn(`[YjsProvider] User ${userId} attempted to access workspace ${workspaceId} owned by ${workspace.userId}, rejecting`);
+      conn.close();
+      return;
+    }
 
     const fullDocName = `${workspaceId}:${docName}`;
-    console.log(`[YjsProvider] Connecting to doc: workspace=${workspaceId}, file=${docName}`);
+    console.log(`[YjsProvider] Authenticated user ${username} (${userId}) connected to workspace=${workspaceId}, file=${docName}`);
 
     // Get or create shared document (with persistence loading)
     const doc = await getYDoc(fullDocName, workspaceId, this.storage);
