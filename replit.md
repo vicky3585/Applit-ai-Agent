@@ -97,8 +97,47 @@ The system is built on a hybrid Node.js + Python architecture. Data storage uses
 
 ## External Dependencies
 
-*   **AI Services**: OpenAI API
+*   **AI Services**: OpenAI API, vLLM (optional local GPU inference)
 *   **Database**: PostgreSQL (via Neon serverless driver)
 *   **UI Libraries**: Radix UI, Tailwind CSS, Lucide React
 *   **Build & Runtime**: Vite, esbuild, tsx, Drizzle Kit
 *   **Session Management**: connect-pg-simple
+
+## vLLM Integration (Local GPU Inference)
+
+**Status**: Implemented (November 16, 2024)
+
+Applit supports hybrid AI mode combining OpenAI API with local vLLM GPU inference for cost-effective, high-performance code generation:
+
+- **Hybrid Mode**: Uses local vLLM for planning/testing tasks, OpenAI GPT-4 for critical code generation
+- **GPU Support**: Optimized for NVIDIA GPUs (tested on RTX 3060 12GB)
+- **OpenAI-Compatible**: vLLM provides drop-in OpenAI API replacement
+- **Performance**: Up to 24x faster than HuggingFace Transformers with PagedAttention
+
+### Files:
+- `server/utils/ai-client.ts` - AI client factory for OpenAI/vLLM/hybrid mode
+- `docs/VLLM_SETUP.md` - Comprehensive setup guide
+- `scripts/setup-vllm.sh` - Automated setup script
+- `.env.example` - Environment configuration with vLLM settings
+
+### Configuration:
+```bash
+AI_PROVIDER=hybrid
+VLLM_API_BASE=http://localhost:8000/v1
+VLLM_MODEL_NAME=meta-llama/Llama-3.1-8B-Instruct
+CUDA_VISIBLE_DEVICES=0
+```
+
+### Quick Start:
+```bash
+# Run automated setup
+./scripts/setup-vllm.sh
+
+# Start vLLM server
+./start-vllm.sh
+
+# Start Applit (in new terminal)
+npm run dev
+```
+
+See `docs/VLLM_SETUP.md` for detailed instructions.

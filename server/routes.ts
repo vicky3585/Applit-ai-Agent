@@ -14,10 +14,9 @@ import * as github from "./github";
 import * as git from "./git";
 import { initializeYjsProvider } from "./yjs-provider";
 import * as path from "path";
+import { createAIClient } from "./utils/ai-client";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const openai = createAIClient();
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
@@ -1117,14 +1116,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("[Agent] Using TypeScript orchestrator (Python agent not available)");
         
         const { AgentOrchestrator } = await import("./agents/orchestrator");
-        const OpenAI = (await import("openai")).default;
+        const { createAIClient } = await import("./utils/ai-client");
         
         const files = await storage.getFilesByWorkspace(workspaceId);
         const settings = await storage.getWorkspaceSettings(workspaceId) || null;
         
-        const openai = new OpenAI({
-          apiKey: process.env.OPENAI_API_KEY,
-        });
+        const openai = createAIClient();
         
         const orchestrator = new AgentOrchestrator(storage);
         
