@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from "react";
-import { RefreshCw, ExternalLink, AlertCircle, Loader2, Globe } from "lucide-react";
+import { RefreshCw, ExternalLink, AlertCircle, Loader2, Globe, Server } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { WebSocketClient } from "@/lib/websocket";
+
+type ServerStatus = "starting" | "running" | "stopped" | "error" | "restarting";
 
 interface PreviewPaneProps {
   workspaceId: string;
@@ -15,17 +18,23 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [customUrlInput, setCustomUrlInput] = useState("");
+  const [serverStatus, setServerStatus] = useState<ServerStatus | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const wsRef = useRef<WebSocketClient | null>(null);
 
   useEffect(() => {
     // Auto-detect preview URL based on environment
     detectPreviewUrl();
+    fetchServerStatus();
+    
+    // Poll server status every 10 seconds
+    const statusInterval = setInterval(fetchServerStatus, 10000);
     
     // Listen for file changes that might add new HTML files
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         detectPreviewUrl();
+        fetchServerStatus();
       }
     };
     
@@ -33,6 +42,7 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
     
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      clearInterval(statusInterval);
     };
   }, [workspaceId]);
 
@@ -63,6 +73,18 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
       wsRef.current = null;
     };
   }, [workspaceId, autoReload]);
+
+  const fetchServerStatus = async () => {
+    try {
+      const response = await fetch(`/api/workspaces/${workspaceId}/dev-server/status`);
+      if (response.ok) {
+        const data = await response.json();
+        setServerStatus(data.status || null);
+      }
+    } catch (err) {
+      console.error("Failed to fetch server status:", err);
+    }
+  };
 
   const detectPreviewUrl = async () => {
     setLoading(true);
@@ -98,6 +120,37 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
     } catch (err) {
       setError("Unable to detect preview URL. You can enter one manually below.");
       setLoading(false);
+    }
+  };
+
+  const getStatusBadgeVariant = (): "default" | "secondary" | "destructive" | "outline" => {
+    switch (serverStatus) {
+      case "running":
+        return "default"; // Will be styled green
+      case "starting":
+      case "restarting":
+        return "secondary"; // Will be styled yellow/orange
+      case "error":
+        return "destructive"; // Will be styled red
+      case "stopped":
+      default:
+        return "outline"; // Will be styled gray
+    }
+  };
+
+  const getStatusLabel = (): string => {
+    switch (serverStatus) {
+      case "running":
+        return "Running";
+      case "starting":
+        return "Starting...";
+      case "restarting":
+        return "Restarting...";
+      case "error":
+        return "Error";
+      case "stopped":
+      default:
+        return "Stopped";
     }
   };
 
@@ -137,7 +190,21 @@ export default function PreviewPane({ workspaceId, autoReload = true }: PreviewP
       {/* Header */}
       <div className="h-10 border-b flex items-center px-4 gap-2">
         <Globe className="w-4 h-4 text-primary" />
-        <span className="text-sm font-medium flex-1">Preview</span>
+        <span className="text-sm font-medium">Preview</span>
+        
+        {/* Server Status Badge */}
+        {serverStatus && (
+          <Badge
+            variant={getStatusBadgeVariant()}
+            className="gap-1 text-xs"
+            data-testid="badge-server-status"
+          >
+            <Server className="w-3 h-3" />
+            {getStatusLabel()}
+          </Badge>
+        )}
+        
+        <div className="flex-1" /> {/* Spacer */}
         
         <Button
           size="icon"

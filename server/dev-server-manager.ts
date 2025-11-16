@@ -5,6 +5,8 @@ import { ENV_CONFIG } from "@shared/environment";
 import { StructuredLogger } from "./logger";
 import type { LogEntry } from "@shared/schema";
 
+export type ServerStatus = "starting" | "running" | "stopped" | "error" | "restarting";
+
 interface DevServer {
   workspaceId: string;
   type: "node" | "python" | "static" | "vite";
@@ -12,6 +14,10 @@ interface DevServer {
   process: ChildProcess;
   url: string;
   startedAt: Date;
+  status: ServerStatus;
+  lastHealthCheck?: Date;
+  healthCheckFails: number;
+  healthCheckInterval?: NodeJS.Timeout;
 }
 
 export interface DevServerStartResult {
@@ -62,10 +68,15 @@ export class DevServerManager {
       process,
       url: `http://localhost:${port}`,
       startedAt: new Date(),
+      status: "starting",
+      healthCheckFails: 0,
     };
 
     this.servers.set(workspaceId, server);
     console.log(`[DevServer] Started ${serverType} server for ${workspaceId} on port ${port}`);
+
+    // Start health check monitoring
+    this.startHealthCheck(workspaceId);
 
     return server;
   }
@@ -78,6 +89,12 @@ export class DevServerManager {
     if (!server) return;
 
     try {
+      // Clear health check interval
+      if (server.healthCheckInterval) {
+        clearInterval(server.healthCheckInterval);
+      }
+      
+      server.status = "stopped";
       server.process.kill();
       this.usedPorts.delete(server.port);
       this.servers.delete(workspaceId);
@@ -228,6 +245,81 @@ export class DevServerManager {
       }
     }
     return null;
+  }
+
+  /**
+   * Start health check for a server
+   */
+  private startHealthCheck(workspaceId: string): void {
+    const server = this.servers.get(workspaceId);
+    if (!server) return;
+
+    // Initial health check after 5 seconds (give server time to start)
+    setTimeout(() => this.performHealthCheck(workspaceId), 5000);
+
+    // Periodic health check every 30 seconds
+    server.healthCheckInterval = setInterval(() => {
+      this.performHealthCheck(workspaceId);
+    }, 30000);
+  }
+
+  /**
+   * Perform health check on a server
+   */
+  private async performHealthCheck(workspaceId: string): Promise<void> {
+    const server = this.servers.get(workspaceId);
+    if (!server) return;
+
+    try {
+      const response = await fetch(server.url, {
+        method: "GET",
+        signal: AbortSignal.timeout(3000), // 3 second timeout
+      });
+
+      if (response.ok || response.status === 404) {
+        // Server is responsive (404 is OK - server is running but route doesn't exist)
+        if (server.status !== "running") {
+          server.status = "running";
+          console.log(`[DevServer] Health check passed for ${workspaceId}`);
+        }
+        server.healthCheckFails = 0;
+        server.lastHealthCheck = new Date();
+      } else {
+        this.handleHealthCheckFailure(workspaceId, `HTTP ${response.status}`);
+      }
+    } catch (error: any) {
+      this.handleHealthCheckFailure(workspaceId, error.message);
+    }
+  }
+
+  /**
+   * Handle health check failure
+   */
+  private handleHealthCheckFailure(workspaceId: string, reason: string): void {
+    const server = this.servers.get(workspaceId);
+    if (!server) return;
+
+    server.healthCheckFails++;
+    server.lastHealthCheck = new Date();
+
+    console.warn(`[DevServer] Health check failed for ${workspaceId} (${server.healthCheckFails}/3): ${reason}`);
+
+    // After 3 consecutive failures, mark as error
+    if (server.healthCheckFails >= 3) {
+      server.status = "error";
+      console.error(`[DevServer] Server ${workspaceId} marked as unhealthy after 3 failed health checks`);
+      
+      // TODO: Optionally attempt automatic restart
+      // this.restartServer(workspaceId);
+    }
+  }
+
+  /**
+   * Get status of a specific server
+   */
+  getServerStatus(workspaceId: string): ServerStatus | null {
+    const server = this.servers.get(workspaceId);
+    return server ? server.status : null;
   }
 
   /**

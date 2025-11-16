@@ -985,6 +985,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get dev server status for a workspace
+  app.get("/api/workspaces/:id/dev-server/status", ...requireWorkspaceAccess, async (req, res) => {
+    const workspaceId = req.params.id;
+    
+    try {
+      const { getDevServerManager } = await import("./dev-server-manager");
+      const manager = getDevServerManager();
+      const server = manager.getServer(workspaceId);
+      
+      if (server) {
+        res.json({
+          running: true,
+          status: server.status,
+          type: server.type,
+          port: server.port,
+          url: server.url,
+          startedAt: server.startedAt,
+          lastHealthCheck: server.lastHealthCheck,
+          healthCheckFails: server.healthCheckFails,
+        });
+      } else {
+        res.json({
+          running: false,
+          status: "stopped",
+        });
+      }
+    } catch (error: any) {
+      console.error(`[DevServer] Error getting server status:`, error);
+      res.status(500).json({ error: "Failed to get server status" });
+    }
+  });
+
   // Task 4: Dev Server Proxy - Only proxy when dev server exists
   // Fix 2: Only create and invoke proxy when dev server is running
   app.use("/preview/:workspaceId", async (req: any, res: any, next: any) => {
