@@ -177,9 +177,9 @@ export const registerSchema = z.object({
     .regex(/^[a-zA-Z0-9_-]+$/, "Username can only contain letters, numbers, hyphens, and underscores")
     .transform(val => val.trim().toLowerCase()),
   email: z.string()
+    .min(1, "Email is required")
     .email("Invalid email address")
-    .transform(val => val.trim().toLowerCase())
-    .optional(),
+    .transform(val => val.trim().toLowerCase()),
   password: z.string()
     .min(8, "Password must be at least 8 characters")
     .regex(/[A-Z]/, "Password must contain at least one uppercase letter")

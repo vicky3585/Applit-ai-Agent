@@ -9,6 +9,7 @@ import OpenAI from "openai";
 import { ENV_CONFIG, validateDockerAccess, validateDatabaseAccess, getServiceUrl } from "@shared/environment";
 import { installPackageRequestSchema, triggerDeploymentSchema } from "@shared/schema";
 import { authMiddleware } from "./auth-middleware";
+import { createWorkspaceOwnershipMiddleware, createRequireWorkspaceAccess } from "./workspace-ownership-middleware";
 import { templates, getTemplateById } from "./templates";
 import * as github from "./github";
 import * as git from "./git";
@@ -19,9 +20,16 @@ import { verifyAccessToken } from "./auth";
 export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   
+  // Initialize storage
+  const storageInstance = await storage;
+  
+  // Create workspace ownership middleware
+  const workspaceOwnership = createWorkspaceOwnershipMiddleware(storageInstance);
+  const requireWorkspaceAccess = createRequireWorkspaceAccess(authMiddleware, workspaceOwnership);
+  
   // Initialize Yjs provider for real-time collaborative editing (Phase 7)
   // Handles WebSocket upgrades on /yjs/* paths (separate from /ws)
-  const yjsProvider = initializeYjsProvider(httpServer, await storage);
+  const yjsProvider = initializeYjsProvider(httpServer, storageInstance);
   console.log("[Phase 7] Yjs collaborative editing ENABLED (Week 1 Priority #1)");
   
   // WebSocket server for real-time communication
@@ -53,7 +61,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (data.type === "join" && typeof data.workspaceId === "string") {
           const wsId = data.workspaceId;
           
-          // SECURITY: Authenticate user via JWT token
+          // SECURITY: Authenticate user via JWT token with session validation
           const token = data.token;
           if (!token) {
             console.error("[WebSocket] Join rejected - no authentication token provided");
@@ -64,17 +72,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           
           let authenticatedUserId: string;
           try {
-            const payload = verifyAccessToken(token);
-            authenticatedUserId = payload.userId;
+            // CRITICAL SECURITY: Use getUserFromToken to validate session exists in DB
+            const { getUserFromToken } = await import("./auth");
+            const userInfo = await getUserFromToken(token);
+            if (!userInfo) {
+              throw new Error("Session revoked or expired");
+            }
+            authenticatedUserId = userInfo.userId;
           } catch (error) {
-            console.error("[WebSocket] Join rejected - invalid token:", error);
+            console.error("[WebSocket] Join rejected - invalid token or revoked session:", error);
             ws.send(JSON.stringify({ type: "error", error: "Invalid authentication token" }));
             ws.close();
             return;
           }
           
           // SECURITY: Validate workspace ownership before allowing join
-          const workspace = await storage.getWorkspace(wsId);
+          const workspace = await storageInstance.getWorkspace(wsId);
           if (!workspace) {
             console.warn(`[WebSocket] Workspace ${wsId} not found, rejecting join`);
             ws.send(JSON.stringify({ type: "error", error: "Workspace not found" }));
@@ -113,7 +126,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.log(`[WebSocket] User ${uid} joined workspace ${wsId}`);
           
           // Send current state
-          const execution = await storage.getAgentExecution(wsId);
+          const execution = await storageInstance.getAgentExecution(wsId);
           ws.send(JSON.stringify({
             type: "agent_state",
             data: execution || { status: "idle" },
@@ -138,7 +151,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Save user message
-          await storage.createChatMessage(
+          await storageInstance.createChatMessage(
             authenticatedWorkspaceId,
             "user",
             data.content
@@ -231,8 +244,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   ) {
     try {
       // Get workspace context
-      const files = await storage.getFilesByWorkspace(workspaceId);
-      const settings = await storage.getWorkspaceSettings(workspaceId);
+      const files = await storageInstance.getFilesByWorkspace(workspaceId);
+      const settings = await storageInstance.getWorkspaceSettings(workspaceId);
       
       // Import and create orchestrator
       const { AgentOrchestrator } = await import("./agents/orchestrator");
@@ -307,7 +320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const fileCount = result.filesGenerated.length;
         finalMessage = `Workflow completed successfully! Generated ${fileCount} file(s).`;
         
-        await storage.createChatMessage(
+        await storageInstance.createChatMessage(
           workspaceId,
           "agent",
           finalMessage
@@ -326,7 +339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const errorDetails = result.errors.length > 0 ? result.errors.join("; ") : "Unknown error";
         finalMessage = `Workflow failed after ${result.attemptCount} attempt(s). Error: ${errorDetails}`;
         
-        await storage.createChatMessage(
+        await storageInstance.createChatMessage(
           workspaceId,
           "agent",
           finalMessage
@@ -341,7 +354,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Agent processing error:", error);
       
-      await storage.createOrUpdateAgentExecution(workspaceId, {
+      await storageInstance.createOrUpdateAgentExecution(workspaceId, {
         prompt: userMessage,
         status: "failed",
         current_step: "idle",
@@ -408,32 +421,217 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // REST API endpoints
   
-  // Task 7.9: Get current authenticated user
-  // TODO: In production, protect this with auth middleware
-  app.get("/api/auth/me", async (req, res) => {
-    // For now, return a default user (in production, get from session)
-    // This enables multiplayer testing without full auth system
-    res.json({
-      id: "user1",
-      username: "Anonymous",
-      email: null,
-    });
+  // GET /api/auth/me - Get currently authenticated user
+  // Uses authMiddleware to support both header and cookie authentication
+  app.get("/api/auth/me", authMiddleware, async (req, res) => {
+    try {
+      // User is already authenticated and attached by authMiddleware
+      // req.user contains {userId, username} from token
+      // Return user data directly (password not included in req.user)
+      res.json({
+        id: req.user!.userId,
+        username: req.user!.username,
+        email: req.user!.email || null, // Email may not be in token payload
+      });
+    } catch (error: any) {
+      console.error("[Auth] Get user error:", error);
+      res.status(500).json({ error: error.message || "Failed to get user" });
+    }
   });
 
   // GET /api/auth/ws-token - Get WebSocket authentication token
   app.get("/api/auth/ws-token", async (req, res) => {
-    // For now, generate token for default user1
-    // TODO: In production, get userId from authenticated session
-    const user = {
-      id: "user1",
-      username: "Anonymous",
-    };
-    
-    // Generate short-lived JWT token for WebSocket authentication
-    const { signAccessToken } = await import("./auth");
-    const token = signAccessToken(user as any);
-    
-    res.json({ token });
+    try {
+      // Get access token from cookie
+      const accessToken = req.cookies?.accessToken;
+      
+      if (!accessToken) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      // CRITICAL SECURITY: Verify access token AND validate session exists in DB
+      const { getUserFromToken, signAccessToken, verifyAccessToken } = await import("./auth");
+      const userInfo = await getUserFromToken(accessToken);
+      if (!userInfo) {
+        return res.status(401).json({ error: "Invalid or expired session" });
+      }
+      
+      // Get full user object from database
+      const user = await storageInstance.getUser(userInfo.userId);
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      // Get sessionId from original token for new token generation
+      let payload;
+      try {
+        payload = verifyAccessToken(accessToken);
+      } catch (error) {
+        return res.status(401).json({ error: "Invalid token" });
+      }
+      
+      // Generate short-lived JWT token for WebSocket authentication
+      const token = signAccessToken(user, payload.sessionId);
+      
+      res.json({ token });
+    } catch (error: any) {
+      console.error("[Auth] WS token error:", error);
+      res.status(500).json({ error: error.message || "Failed to generate token" });
+    }
+  });
+
+  // POST /api/auth/signup - Create new user account
+  app.post("/api/auth/signup", async (req, res) => {
+    try {
+      const { registerSchema } = await import("@shared/schema");
+      const validatedData = registerSchema.parse(req.body);
+      
+      // Check if username already exists
+      const existingUser = await storageInstance.getUserByUsername(validatedData.username);
+      if (existingUser) {
+        return res.status(400).json({ error: "Username already taken" });
+      }
+      
+      // Check if email already exists
+      const existingEmail = await storageInstance.getUserByEmail(validatedData.email);
+      if (existingEmail) {
+        return res.status(400).json({ error: "Email already registered" });
+      }
+      
+      // Hash password and create user
+      const { hashPassword } = await import("./auth");
+      const passwordHash = await hashPassword(validatedData.password);
+      
+      const newUser = await storageInstance.createUser({
+        username: validatedData.username,
+        email: validatedData.email,
+        password: passwordHash,
+      });
+      
+      console.log(`[Auth] User registered: ${newUser.username} (${newUser.id})`);
+      
+      // Return user data (without password hash)
+      res.status(201).json({
+        id: newUser.id,
+        username: newUser.username,
+        email: newUser.email,
+      });
+    } catch (error: any) {
+      console.error("[Auth] Signup error:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ error: error.errors[0]?.message || "Validation failed" });
+      }
+      res.status(500).json({ error: error.message || "Signup failed" });
+    }
+  });
+
+  // POST /api/auth/login - Login with username/password
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { loginSchema } = await import("@shared/schema");
+      const validatedData = loginSchema.parse(req.body);
+      
+      // Find user by username
+      const user = await storageInstance.getUserByUsername(validatedData.username);
+      if (!user) {
+        return res.status(401).json({ error: "Invalid username or password" });
+      }
+      
+      // Verify password
+      const { verifyPassword, signAccessToken, signRefreshToken, generateRefreshToken, hashRefreshToken } = await import("./auth");
+      const isPasswordValid = await verifyPassword(validatedData.password, user.password);
+      if (!isPasswordValid) {
+        // TODO: Increment failed login count and implement account lockout
+        return res.status(401).json({ error: "Invalid username or password" });
+      }
+      
+      // Generate refresh token and create session
+      const refreshToken = generateRefreshToken();
+      const refreshTokenHash = await hashRefreshToken(refreshToken);
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      
+      const session = await storageInstance.createSession({
+        userId: user.id,
+        refreshTokenHash,
+        expiresAt,
+        userAgent: req.headers["user-agent"] || null,
+        ipAddress: req.ip || null,
+      });
+      
+      // Generate JWT access token with sessionId for session validation
+      const accessToken = signAccessToken(user, session.id);
+      const refreshTokenJWT = signRefreshToken(user.id, session.id);
+      
+      // Update last login timestamp
+      await storageInstance.updateUserLastLogin(user.id);
+      
+      console.log(`[Auth] User logged in: ${user.username} (${user.id})`);
+      
+      // Set httpOnly cookies for security
+      res.cookie("accessToken", accessToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 15 * 60 * 1000, // 15 minutes
+      });
+      
+      res.cookie("refreshToken", refreshTokenJWT, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+      
+      // Return user data
+      res.json({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+      });
+    } catch (error: any) {
+      console.error("[Auth] Login error:", error);
+      if (error.name === "ZodError") {
+        return res.status(400).json({ error: error.errors[0]?.message || "Validation failed" });
+      }
+      res.status(500).json({ error: error.message || "Login failed" });
+    }
+  });
+
+  // POST /api/auth/logout - Logout and destroy session
+  app.post("/api/auth/logout", async (req, res) => {
+    try {
+      // Get refresh token from cookie to revoke session
+      const refreshToken = req.cookies?.refreshToken;
+      
+      if (refreshToken) {
+        try {
+          const { verifyRefreshTokenJWT } = await import("./auth");
+          const payload = verifyRefreshTokenJWT(refreshToken);
+          
+          // Revoke session in database
+          await storageInstance.deleteSession(payload.sessionId);
+          console.log(`[Auth] Revoked session ${payload.sessionId} for user ${payload.userId}`);
+        } catch (error) {
+          // Token invalid or expired - continue with cookie clearing
+          console.warn("[Auth] Could not revoke session (token invalid):", error);
+        }
+      }
+      
+      // Clear cookies with same options as when they were set
+      const cookieOptions = {
+        httpOnly: true,
+        secure: req.secure || req.get('x-forwarded-proto') === 'https',
+        sameSite: 'lax' as const,
+        path: '/',
+      };
+      res.clearCookie("accessToken", cookieOptions);
+      res.clearCookie("refreshToken", cookieOptions);
+      
+      res.json({ message: "Logged out successfully" });
+    } catch (error: any) {
+      console.error("[Auth] Logout error:", error);
+      res.status(500).json({ error: error.message || "Logout failed" });
+    }
   });
 
   // ========================================
@@ -443,11 +641,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // GET /api/workspaces - List all workspaces for current user
   app.get("/api/workspaces", async (req, res) => {
     try {
-      // TODO: Get userId from authenticated session
-      const userId = "user1"; // Default user for now
-      const workspaces = await storage.getWorkspacesByUserId(userId);
+      const { getAuthenticatedUserId } = await import("./get-auth-user");
+      const userId = await getAuthenticatedUserId(req);
+      const workspaces = await storageInstance.getWorkspacesByUserId(userId);
       res.json(workspaces);
     } catch (error: any) {
+      if (error.message === "Not authenticated" || error.message === "Invalid or expired session") {
+        return res.status(401).json({ error: error.message });
+      }
       console.error("[Workspaces] List error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -462,14 +663,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Workspace name is required" });
       }
 
-      // TODO: Get userId from authenticated session
-      const userId = "user1"; // Default user for now
+      const { getAuthenticatedUserId } = await import("./get-auth-user");
+      const userId = await getAuthenticatedUserId(req);
       
-      const workspace = await storage.createWorkspace(name.trim(), userId);
-      console.log(`[Workspaces] Created workspace: ${workspace.id} (${workspace.name})`);
+      const workspace = await storageInstance.createWorkspace(name.trim(), userId);
+      console.log(`[Workspaces] Created workspace: ${workspace.id} (${workspace.name}) for user ${userId}`);
       
       res.status(201).json(workspace);
     } catch (error: any) {
+      if (error.message === "Not authenticated" || error.message === "Invalid or expired session") {
+        return res.status(401).json({ error: error.message });
+      }
       console.error("[Workspaces] Create error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -481,14 +685,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const workspaceId = req.params.id;
       
       // Verify workspace exists
-      const workspace = await storage.getWorkspace(workspaceId);
+      const workspace = await storageInstance.getWorkspace(workspaceId);
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" });
       }
 
       // Verify user owns this workspace
-      // TODO: Get userId from authenticated session
-      const userId = "user1"; // Default user for now
+      const { getAuthenticatedUserId } = await import("./get-auth-user");
+      const userId = await getAuthenticatedUserId(req);
       
       if (workspace.userId !== userId) {
         return res.status(403).json({ 
@@ -496,8 +700,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      await storage.deleteWorkspace(workspaceId);
-      console.log(`[Workspaces] Deleted workspace: ${workspaceId} (${workspace.name})`);
+      await storageInstance.deleteWorkspace(workspaceId);
+      console.log(`[Workspaces] Deleted workspace: ${workspaceId} (${workspace.name}) for user ${userId}`);
       
       // Broadcast workspace deletion event ONLY to workspace owner
       broadcastToUser(workspace.userId, {
@@ -507,6 +711,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json({ success: true, message: "Workspace deleted successfully" });
     } catch (error: any) {
+      if (error.message === "Not authenticated" || error.message === "Invalid or expired session") {
+        return res.status(401).json({ error: error.message });
+      }
       console.error("[Workspaces] Delete error:", error);
       res.status(500).json({ error: error.message });
     }
@@ -529,7 +736,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { buildCommand } = validation.data;
       
       // Verify workspace exists
-      const workspace = await storage.getWorkspace(workspaceId);
+      const workspace = await storageInstance.getWorkspace(workspaceId);
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" });
       }
@@ -542,7 +749,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Create deployment record with pending status
-      const deployment = await storage.createDeployment(
+      const deployment = await storageInstance.createDeployment(
         workspaceId,
         "pending",
         buildCommand
@@ -579,7 +786,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const workspaceId = req.params.id;
       
       // Verify workspace exists
-      const workspace = await storage.getWorkspace(workspaceId);
+      const workspace = await storageInstance.getWorkspace(workspaceId);
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" });
       }
@@ -591,7 +798,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      const deployments = await storage.getDeployments(workspaceId);
+      const deployments = await storageInstance.getDeployments(workspaceId);
       res.json(deployments);
     } catch (error: any) {
       console.error("[Deployment] List error:", error);
@@ -603,22 +810,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Workspace Operations
   // ========================================
 
-  app.get("/api/workspaces/:id", async (req, res) => {
-    const workspace = await storage.getWorkspace(req.params.id);
-    if (!workspace) {
-      return res.status(404).json({ error: "Workspace not found" });
-    }
-    res.json(workspace);
+  app.get("/api/workspaces/:id", ...requireWorkspaceAccess, async (req, res) => {
+    // Workspace ownership already verified by middleware
+    res.json(req.workspace);
   });
 
-  app.get("/api/workspaces/:id/files", async (req, res) => {
-    const files = await storage.getFilesByWorkspace(req.params.id);
+  app.get("/api/workspaces/:id/files", ...requireWorkspaceAccess, async (req, res) => {
+    const files = await storageInstance.getFilesByWorkspace(req.params.id);
     res.json(files);
   });
 
-  app.post("/api/workspaces/:id/files", async (req, res) => {
+  app.post("/api/workspaces/:id/files", ...requireWorkspaceAccess, async (req, res) => {
     const { path, content, language } = req.body;
-    const file = await storage.createFile(
+    const file = await storageInstance.createFile(
       req.params.id,
       path,
       content,
@@ -627,27 +831,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(file);
   });
 
-  app.put("/api/files/:id", async (req, res) => {
-    const { content } = req.body;
-    const file = await storage.updateFile(req.params.id, content);
+  app.put("/api/files/:id", authMiddleware, async (req: any, res) => {
+    const file = await storageInstance.getFile(req.params.id);
     if (!file) {
       return res.status(404).json({ error: "File not found" });
     }
-    res.json(file);
+    
+    const workspace = await storageInstance.getWorkspace(file.workspaceId);
+    if (!workspace || workspace.userId !== req.user.userId) {
+      return res.status(403).json({ error: "Access denied: file belongs to another user's workspace" });
+    }
+    
+    const { content } = req.body;
+    const updatedFile = await storageInstance.updateFile(req.params.id, content);
+    res.json(updatedFile);
   });
 
-  app.patch("/api/files/:id/rename", async (req, res) => {
+  app.patch("/api/files/:id/rename", authMiddleware, async (req: any, res) => {
+    const file = await storageInstance.getFile(req.params.id);
+    if (!file) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    
+    const workspace = await storageInstance.getWorkspace(file.workspaceId);
+    if (!workspace || workspace.userId !== req.user.userId) {
+      return res.status(403).json({ error: "Access denied: file belongs to another user's workspace" });
+    }
+    
     const { newPath } = req.body;
     if (!newPath) {
       return res.status(400).json({ error: "newPath is required" });
     }
     
     try {
-      const file = await storage.renameFile(req.params.id, newPath);
-      if (!file) {
-        return res.status(404).json({ error: "File not found" });
-      }
-      res.json(file);
+      const renamedFile = await storageInstance.renameFile(req.params.id, newPath);
+      res.json(renamedFile);
     } catch (error: any) {
       if (error.message === "A file already exists at the target path") {
         return res.status(409).json({ error: error.message });
@@ -656,34 +874,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/files/:id", async (req, res) => {
-    await storage.deleteFile(req.params.id);
+  app.delete("/api/files/:id", authMiddleware, async (req: any, res) => {
+    const file = await storageInstance.getFile(req.params.id);
+    if (!file) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    
+    const workspace = await storageInstance.getWorkspace(file.workspaceId);
+    if (!workspace || workspace.userId !== req.user.userId) {
+      return res.status(403).json({ error: "Access denied: file belongs to another user's workspace" });
+    }
+    
+    await storageInstance.deleteFile(req.params.id);
     res.json({ success: true });
   });
 
-  app.get("/api/workspaces/:id/chat", async (req, res) => {
-    const messages = await storage.getChatMessages(req.params.id);
+  app.get("/api/workspaces/:id/chat", ...requireWorkspaceAccess, async (req, res) => {
+    const messages = await storageInstance.getChatMessages(req.params.id);
     res.json(messages);
   });
 
-  app.get("/api/workspaces/:id/settings", async (req, res) => {
-    const settings = await storage.getWorkspaceSettings(req.params.id);
+  app.get("/api/workspaces/:id/settings", ...requireWorkspaceAccess, async (req, res) => {
+    const settings = await storageInstance.getWorkspaceSettings(req.params.id);
     res.json(settings || {});
   });
 
-  app.put("/api/workspaces/:id/settings", async (req, res) => {
-    const settings = await storage.upsertWorkspaceSettings(req.params.id, req.body);
+  app.put("/api/workspaces/:id/settings", ...requireWorkspaceAccess, async (req, res) => {
+    const settings = await storageInstance.upsertWorkspaceSettings(req.params.id, req.body);
     res.json(settings);
   });
 
-  app.get("/api/workspaces/:id/api-key-status", async (req, res) => {
+  app.get("/api/workspaces/:id/api-key-status", ...requireWorkspaceAccess, async (req, res) => {
     res.json({ 
       configured: !!process.env.OPENAI_API_KEY,
       keyType: process.env.OPENAI_API_KEY?.startsWith('sk-') ? 'valid' : 'invalid'
     });
   });
 
-  app.get("/api/workspaces/:id/preview-url", async (req, res) => {
+  app.get("/api/workspaces/:id/preview-url", ...requireWorkspaceAccess, async (req, res) => {
     // Task 5: Detect Dev Server and Route Preview Automatically
     // Return the preview URL for the workspace
     const workspaceId = req.params.id;
@@ -729,7 +957,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     // STEP 2: Fall back to HTML file detection (original behavior)
-    const files = await storage.getFilesByWorkspace(workspaceId);
+    const files = await storageInstance.getFilesByWorkspace(workspaceId);
     
     // Look for HTML files
     const htmlFiles = files.filter(f => 
@@ -824,7 +1052,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get all files in workspace
-      const files = await storage.getFilesByWorkspace(workspaceId);
+      const files = await storageInstance.getFilesByWorkspace(workspaceId);
       
       // Find the requested file
       const file = files.find(f => f.path === filePath);
@@ -858,7 +1086,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/workspaces/:id/start-server", async (req, res) => {
+  app.post("/api/workspaces/:id/start-server", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const { getDevServerManager } = await import("./dev-server-manager");
       const { getFilePersistence } = await import("./file-persistence");
@@ -896,7 +1124,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/workspaces/:id/stop-server", async (req, res) => {
+  app.post("/api/workspaces/:id/stop-server", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const { getDevServerManager } = await import("./dev-server-manager");
       const manager = getDevServerManager();
@@ -909,15 +1137,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/workspaces/:id/agent", async (req, res) => {
-    const execution = await storage.getAgentExecution(req.params.id);
+  app.get("/api/workspaces/:id/agent", ...requireWorkspaceAccess, async (req, res) => {
+    const execution = await storageInstance.getAgentExecution(req.params.id);
     res.json(execution || { status: "idle" });
   });
 
   // AI Agent - Status endpoint for polling
-  app.get("/api/workspaces/:id/agent/status", async (req, res) => {
+  app.get("/api/workspaces/:id/agent/status", ...requireWorkspaceAccess, async (req, res) => {
     try {
-      const execution = await storage.getAgentExecution(req.params.id);
+      const execution = await storageInstance.getAgentExecution(req.params.id);
       
       if (!execution) {
         return res.json({ 
@@ -952,9 +1180,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI Agent - Result endpoint for final output
-  app.get("/api/workspaces/:id/agent/result", async (req, res) => {
+  app.get("/api/workspaces/:id/agent/result", ...requireWorkspaceAccess, async (req, res) => {
     try {
-      const execution = await storage.getAgentExecution(req.params.id);
+      const execution = await storageInstance.getAgentExecution(req.params.id);
       
       if (!execution) {
         return res.json({ 
@@ -990,7 +1218,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI Agent - Code generation endpoint (async with status polling)
-  app.post("/api/workspaces/:id/agent/generate", async (req, res) => {
+  app.post("/api/workspaces/:id/agent/generate", ...requireWorkspaceAccess, async (req, res) => {
     const { prompt } = req.body;
     if (!prompt) {
       return res.status(400).json({ error: "Prompt is required" });
@@ -999,7 +1227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const workspaceId = req.params.id;
     
     // Create initial execution record
-    const execution = await storage.createOrUpdateAgentExecution(workspaceId, {
+    const execution = await storageInstance.createOrUpdateAgentExecution(workspaceId, {
       prompt,
       status: "processing",
       current_step: "planning",
@@ -1022,7 +1250,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If Python agent is available, use it
       if (pythonAgentUrl) {
         try {
-          const files = await storage.getFilesByWorkspace(workspaceId);
+          const files = await storageInstance.getFilesByWorkspace(workspaceId);
           
           const response = await fetch(`${pythonAgentUrl}/generate`, {
             method: "POST",
@@ -1054,7 +1282,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Save generated files to workspace
           if (result.files_generated && result.files_generated.length > 0) {
             for (const file of result.files_generated) {
-              await storage.createFile(
+              await storageInstance.createFile(
                 workspaceId,
                 file.path,
                 file.content,
@@ -1118,7 +1346,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const finalErrors = isFailed ? (result.errors || []) : [];
           
           // Fetch previous execution to preserve last_failed_step during processing
-          const previousExecution = await storage.getAgentExecution(workspaceId);
+          const previousExecution = await storageInstance.getAgentExecution(workspaceId);
           
           // Determine last_failed_step
           let lastFailedStep: string | null | undefined = undefined;
@@ -1151,7 +1379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             last_failed_step: lastFailedStep,
           };
           
-          await storage.createOrUpdateAgentExecution(workspaceId, executionUpdate);
+          await storageInstance.createOrUpdateAgentExecution(workspaceId, executionUpdate);
           
           return;
         } catch (error: any) {
@@ -1167,8 +1395,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const { AgentOrchestrator } = await import("./agents/orchestrator");
         const { createAIClient } = await import("./utils/ai-client");
         
-        const files = await storage.getFilesByWorkspace(workspaceId);
-        const settings = await storage.getWorkspaceSettings(workspaceId) || null;
+        const files = await storageInstance.getFilesByWorkspace(workspaceId);
+        const settings = await storageInstance.getWorkspaceSettings(workspaceId) || null;
         
         // Respect workspace model provider setting (UI selector)
         // Map UI values: "openai" → openai, "local" → vllm, "anthropic" → openai (for now)
@@ -1195,7 +1423,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           },
           async (state) => {
             // Update execution in storage
-            await storage.createOrUpdateAgentExecution(workspaceId, {
+            await storageInstance.createOrUpdateAgentExecution(workspaceId, {
               prompt,
               status: state.status,
               current_step: state.currentStep,
@@ -1228,7 +1456,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log(`[Routes] Stringified JSON object for ${file.path}`);
             }
             
-            await storage.createFile(
+            await storageInstance.createFile(
               workspaceId,
               file.path,
               content,
@@ -1252,7 +1480,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("[Agent] Generation error:", error);
         
         // Update execution with error
-        await storage.createOrUpdateAgentExecution(workspaceId, {
+        await storageInstance.createOrUpdateAgentExecution(workspaceId, {
           prompt,
           status: "failed",
           current_step: "idle",
@@ -1266,7 +1494,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Terminal execution endpoints
-  app.post("/api/workspaces/:id/terminal/execute", async (req, res) => {
+  app.post("/api/workspaces/:id/terminal/execute", ...requireWorkspaceAccess, async (req, res) => {
     const { command } = req.body;
     if (!command) {
       return res.status(400).json({ error: "Command is required" });
@@ -1281,9 +1509,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // GET /api/workspaces/:id/executions - Get execution history
-  app.get("/api/workspaces/:id/executions", async (req, res) => {
+  app.get("/api/workspaces/:id/executions", ...requireWorkspaceAccess, async (req, res) => {
     try {
-      const executions = await storage.getCodeExecutions(req.params.id);
+      const executions = await storageInstance.getCodeExecutions(req.params.id);
       res.json(executions);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -1291,9 +1519,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // GET /api/workspaces/:id/executions/:executionId - Get specific execution
-  app.get("/api/workspaces/:id/executions/:executionId", async (req, res) => {
+  app.get("/api/workspaces/:id/executions/:executionId", ...requireWorkspaceAccess, async (req, res) => {
     try {
-      const execution = await storage.getCodeExecution(req.params.executionId);
+      const execution = await storageInstance.getCodeExecution(req.params.executionId);
       if (!execution) {
         return res.status(404).json({ error: "Execution not found" });
       }
@@ -1303,15 +1531,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/workspaces/:id/files/:fileId/execute", async (req, res) => {
-    const file = await storage.getFile(req.params.fileId);
+  app.post("/api/workspaces/:id/files/:fileId/execute", ...requireWorkspaceAccess, async (req, res) => {
+    const file = await storageInstance.getFile(req.params.fileId);
     if (!file) {
       return res.status(404).json({ error: "File not found" });
     }
     
     try {
       // Create execution record
-      const execution = await storage.createCodeExecution(
+      const execution = await storageInstance.createCodeExecution(
         req.params.id,
         file.path,
         file.language || undefined
@@ -1346,7 +1574,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
 
             // Append to storage
-            await storage.appendCodeExecutionOutput(execution.id, accumulatedOutput);
+            await storageInstance.appendCodeExecutionOutput(execution.id, accumulatedOutput);
             accumulatedOutput = "";
           } catch (error) {
             console.error("[Execution] Failed to flush output:", error);
@@ -1398,7 +1626,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`[Execution] Output flushed for ${file.path}`);
 
             // Update execution record with final result (don't overwrite output - it was streamed incrementally)
-            await storage.updateCodeExecution(execution.id, {
+            await storageInstance.updateCodeExecution(execution.id, {
               status: 'completed',
               error: result.error || null,
               exitCode: result.exitCode !== undefined && result.exitCode !== null ? String(result.exitCode) : null,
@@ -1407,7 +1635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`[Execution] Updated execution record: ${execution.id}`);
 
             // Broadcast completion
-            const updated = await storage.getCodeExecution(execution.id);
+            const updated = await storageInstance.getCodeExecution(execution.id);
             broadcastToWorkspace(req.params.id, {
               type: "execution_completed",
               data: updated,
@@ -1416,7 +1644,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } catch (error: any) {
             console.error("[Execution] Failed to complete execution:", error);
             // Mark as failed if flush/update fails
-            await storage.updateCodeExecution(execution.id, {
+            await storageInstance.updateCodeExecution(execution.id, {
               status: 'failed',
               error: `Completion error: ${error.message}`,
               completedAt: new Date(),
@@ -1439,14 +1667,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Update execution record with error
-          await storage.updateCodeExecution(execution.id, {
+          await storageInstance.updateCodeExecution(execution.id, {
             status: 'failed',
             error: error.message,
             completedAt: new Date(),
           });
 
           // Broadcast error
-          const updated = await storage.getCodeExecution(execution.id);
+          const updated = await storageInstance.getCodeExecution(execution.id);
           broadcastToWorkspace(req.params.id, {
             type: "execution_failed",
             data: updated,
@@ -1461,9 +1689,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Package Management Routes
   
   // GET /api/workspaces/:id/packages - List installed packages
-  app.get("/api/workspaces/:id/packages", async (req, res) => {
+  app.get("/api/workspaces/:id/packages", ...requireWorkspaceAccess, async (req, res) => {
     try {
-      const packages = await storage.getPackages(req.params.id);
+      const packages = await storageInstance.getPackages(req.params.id);
       res.json(packages);
     } catch (error: any) {
       res.status(500).json({ error: error.message });
@@ -1471,7 +1699,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // POST /api/workspaces/:id/packages/install - Install package(s)
-  app.post("/api/workspaces/:id/packages/install", async (req, res) => {
+  app.post("/api/workspaces/:id/packages/install", ...requireWorkspaceAccess, async (req, res) => {
     const workspaceId = req.params.id;
     
     // Validate request body using Zod
@@ -1567,12 +1795,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           // Save to storage
-          const pkg = await storage.upsertPackage(workspaceId, pkgName, version, packageManager);
+          const pkg = await storageInstance.upsertPackage(workspaceId, pkgName, version, packageManager);
           installedPackages.push(pkg);
         } catch (error) {
           console.error(`Failed to parse version for ${pkgName}:`, error);
           // Still save package even if version parsing fails
-          const pkg = await storage.upsertPackage(workspaceId, pkgName, null, packageManager);
+          const pkg = await storageInstance.upsertPackage(workspaceId, pkgName, null, packageManager);
           installedPackages.push(pkg);
         }
       }
@@ -1593,13 +1821,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
   
   // DELETE /api/workspaces/:id/packages/:packageId - Uninstall package
-  app.delete("/api/workspaces/:id/packages/:packageId", async (req, res) => {
+  app.delete("/api/workspaces/:id/packages/:packageId", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const packageId = req.params.packageId;
       
       // Get package to delete
-      const allPackages = await storage.getPackages(workspaceId);
+      const allPackages = await storageInstance.getPackages(workspaceId);
       const packageToDelete = allPackages.find(p => p.id === packageId);
       
       if (!packageToDelete) {
@@ -1632,7 +1860,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Only remove from storage after successful sandbox uninstall
-      await storage.deletePackage(packageId);
+      await storageInstance.deletePackage(packageId);
       
       console.log(`[Packages] Successfully uninstalled ${packageToDelete.name}`);
       res.json({ 
@@ -1671,7 +1899,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/workspaces/:id/apply-template - Apply template to workspace
-  app.post("/api/workspaces/:id/apply-template", async (req, res) => {
+  app.post("/api/workspaces/:id/apply-template", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const { templateId } = req.body;
@@ -1696,7 +1924,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create all template files
       const createdFiles = [];
       for (const templateFile of template.files) {
-        const file = await storage.createFile(
+        const file = await storageInstance.createFile(
           workspaceId,
           templateFile.path,
           templateFile.content,
@@ -1734,7 +1962,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               // Save packages to storage
               for (const pkgName of template.packages.npm) {
-                await storage.upsertPackage(workspaceId, pkgName, null, "npm");
+                await storageInstance.upsertPackage(workspaceId, pkgName, null, "npm");
               }
             } else {
               console.error(`[Templates] npm install failed:`, result.error || result.output);
@@ -1756,7 +1984,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               // Save packages to storage
               for (const pkgName of template.packages.pip) {
-                await storage.upsertPackage(workspaceId, pkgName, null, "pip");
+                await storageInstance.upsertPackage(workspaceId, pkgName, null, "pip");
               }
             } else {
               console.error(`[Templates] pip install failed:`, result.error || result.output);
@@ -1778,7 +2006,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               // Save packages to storage
               for (const pkgName of template.packages.apt) {
-                await storage.upsertPackage(workspaceId, pkgName, null, "apt");
+                await storageInstance.upsertPackage(workspaceId, pkgName, null, "apt");
               }
             } else {
               console.error(`[Templates] apt install failed:`, result.error || result.output);
@@ -1916,7 +2144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/workspaces/:id/git/clone - Clone repository
-  app.post("/api/workspaces/:id/git/clone", async (req, res) => {
+  app.post("/api/workspaces/:id/git/clone", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const { repoUrl, branch } = req.body;
@@ -1949,7 +2177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // GET /api/workspaces/:id/git/status - Get Git status
-  app.get("/api/workspaces/:id/git/status", async (req, res) => {
+  app.get("/api/workspaces/:id/git/status", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const status = await git.getGitStatus(workspaceId);
@@ -1966,7 +2194,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/workspaces/:id/git/stage - Stage files
-  app.post("/api/workspaces/:id/git/stage", async (req, res) => {
+  app.post("/api/workspaces/:id/git/stage", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const { files = [] } = req.body;
@@ -1985,7 +2213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/workspaces/:id/git/commit - Commit changes
-  app.post("/api/workspaces/:id/git/commit", async (req, res) => {
+  app.post("/api/workspaces/:id/git/commit", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const { message, author } = req.body;
@@ -2008,7 +2236,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/workspaces/:id/git/push - Push commits
-  app.post("/api/workspaces/:id/git/push", async (req, res) => {
+  app.post("/api/workspaces/:id/git/push", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const { remote = "origin", branch } = req.body;
@@ -2027,7 +2255,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/workspaces/:id/git/pull - Pull changes
-  app.post("/api/workspaces/:id/git/pull", async (req, res) => {
+  app.post("/api/workspaces/:id/git/pull", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const { remote = "origin", branch } = req.body;
@@ -2046,7 +2274,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // GET /api/workspaces/:id/git/history - Get commit history
-  app.get("/api/workspaces/:id/git/history", async (req, res) => {
+  app.get("/api/workspaces/:id/git/history", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const limit = parseInt(req.query.limit as string) || 10;
@@ -2060,7 +2288,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/workspaces/:id/git/init - Initialize repository
-  app.post("/api/workspaces/:id/git/init", async (req, res) => {
+  app.post("/api/workspaces/:id/git/init", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const result = await git.initRepository(workspaceId);
@@ -2077,7 +2305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // POST /api/workspaces/:id/git/remote - Set remote URL
-  app.post("/api/workspaces/:id/git/remote", async (req, res) => {
+  app.post("/api/workspaces/:id/git/remote", ...requireWorkspaceAccess, async (req, res) => {
     try {
       const workspaceId = req.params.id;
       const { url, name = "origin" } = req.body;
@@ -2111,7 +2339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userPattern = (req.query.pattern as string) || "*";
       
       // SECURITY: Validate workspace ownership
-      const workspace = await storage.getWorkspace(workspaceId);
+      const workspace = await storageInstance.getWorkspace(workspaceId);
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" });
       }
@@ -2150,7 +2378,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userKey = req.params.key;
       
       // SECURITY: Validate workspace ownership
-      const workspace = await storage.getWorkspace(workspaceId);
+      const workspace = await storageInstance.getWorkspace(workspaceId);
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" });
       }
@@ -2185,7 +2413,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { key: userKey, value, ttl } = req.body;
       
       // SECURITY: Validate workspace ownership
-      const workspace = await storage.getWorkspace(workspaceId);
+      const workspace = await storageInstance.getWorkspace(workspaceId);
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" });
       }
@@ -2224,7 +2452,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userKey = req.params.key;
       
       // SECURITY: Validate workspace ownership
-      const workspace = await storage.getWorkspace(workspaceId);
+      const workspace = await storageInstance.getWorkspace(workspaceId);
       if (!workspace) {
         return res.status(404).json({ error: "Workspace not found" });
       }

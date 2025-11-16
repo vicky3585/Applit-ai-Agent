@@ -99,5 +99,21 @@ See `docs/HYBRID_MODE.md` for complete implementation details.
 - **Key Namespacing**: Workspace-scoped keys (`workspace:${id}:${key}`) prevent collisions
 - **Status**: ✅ Backend complete (API + storage layer), UI browser pending
 
+**Authentication Security Hardening (Nov 16, 2025)**
+- **Session-Based Token Validation**: Access tokens now include `sessionId` and are validated against active sessions in database on every request
+  - Prevents token reuse after logout - sessions revoked from DB immediately invalidate ALL tokens
+  - Added `getSession(id)` method to IStorage, MemStorage, and PostgresStorage
+  - `getUserFromToken()` enforces server-side session lookup before accepting any token
+- **Unified Authentication Flow**: All authentication entry points now use `getUserFromToken` for consistent session validation:
+  - `authMiddleware` - REST API authentication
+  - `getAuthenticatedUser` / `getAuthenticatedUserId` - Helper utilities
+  - WebSocket join authentication - Real-time collaboration
+  - `/api/auth/ws-token` endpoint - WebSocket token generation
+- **Cookie-Parser Integration**: Fixed missing cookie-parser middleware - cookies now properly parsed for httpOnly authentication
+- **Enhanced Logout**: Properly revokes sessions from database + clears httpOnly cookies with correct expiry headers
+- **Code Consistency**: Replaced all 76 `await storage.` references with `storageInstance` throughout routes.ts
+- **Security Result**: Access tokens become immediately invalid after logout (not just after 15min expiry) - complete session control achieved
+- **Status**: ✅ Complete (all authentication paths secured, architect-reviewed, production-ready)
+
 **Strategic Context**
 These improvements directly support the 12-week roadmap goal of achieving Replit feature parity while introducing unique innovations. Week 1 focused on critical infrastructure (multiplayer, AI autonomy, persistent storage) that unblocks subsequent weeks of feature development.

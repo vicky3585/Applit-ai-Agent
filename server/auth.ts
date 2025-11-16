@@ -20,6 +20,7 @@ const BCRYPT_ROUNDS = 12;
 export interface AccessTokenPayload {
   userId: string;
   username: string;
+  sessionId: string;
   type: "access";
 }
 
@@ -67,10 +68,11 @@ export async function verifyRefreshToken(token: string, hash: string): Promise<b
 /**
  * Generate JWT access token (short-lived)
  */
-export function signAccessToken(user: User): string {
+export function signAccessToken(user: User, sessionId: string): string {
   const payload: AccessTokenPayload = {
     userId: user.id,
     username: user.username,
+    sessionId,
     type: "access",
   };
   
@@ -144,11 +146,29 @@ export function verifyRefreshTokenJWT(token: string): RefreshTokenPayload {
 export async function getUserFromToken(token: string): Promise<{ userId: string; username: string } | null> {
   try {
     const payload = verifyAccessToken(token);
+    
+    // CRITICAL SECURITY: Verify session still exists in database
+    // This ensures logout properly invalidates access tokens
+    const { storage } = await import("./storage-factory");
+    const storageInstance = await storage;
+    const session = await storageInstance.getSession(payload.sessionId);
+    
+    if (!session) {
+      console.warn(`[Auth] Session not found: ${payload.sessionId}`);
+      return null; // Session revoked or invalid
+    }
+    
+    if (session.userId !== payload.userId) {
+      console.warn(`[Auth] Session userId mismatch: session.userId=${session.userId}, payload.userId=${payload.userId}`);
+      return null; // Session revoked or invalid
+    }
+    
     return {
       userId: payload.userId,
       username: payload.username,
     };
   } catch (error) {
+    console.error("[Auth] getUserFromToken error:", error);
     return null;
   }
 }

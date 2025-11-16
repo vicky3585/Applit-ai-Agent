@@ -22,7 +22,8 @@ declare global {
 
 /**
  * Authentication middleware
- * Verifies JWT access token and attaches user to request
+ * Verifies JWT access token from Authorization header OR cookies
+ * Prioritizes headers for API clients, falls back to cookies for browser clients
  */
 export async function authMiddleware(
   req: Request,
@@ -30,7 +31,13 @@ export async function authMiddleware(
   next: NextFunction
 ): Promise<void> {
   try {
-    const token = extractTokenFromHeader(req.headers.authorization);
+    // Try Authorization header first (for API clients)
+    let token = extractTokenFromHeader(req.headers.authorization);
+    
+    // Fall back to cookies (for browser clients)
+    if (!token && req.cookies?.accessToken) {
+      token = req.cookies.accessToken;
+    }
     
     if (!token) {
       res.status(401).json({ error: "Authentication required" });
@@ -54,7 +61,7 @@ export async function authMiddleware(
 
 /**
  * Optional authentication middleware
- * Attaches user if token is valid, but doesn't block if missing
+ * Attaches user if token is valid (from header or cookie), but doesn't block if missing
  */
 export async function optionalAuthMiddleware(
   req: Request,
@@ -62,7 +69,13 @@ export async function optionalAuthMiddleware(
   next: NextFunction
 ): Promise<void> {
   try {
-    const token = extractTokenFromHeader(req.headers.authorization);
+    // Try Authorization header first (for API clients)
+    let token = extractTokenFromHeader(req.headers.authorization);
+    
+    // Fall back to cookies (for browser clients)
+    if (!token && req.cookies?.accessToken) {
+      token = req.cookies.accessToken;
+    }
     
     if (token) {
       const user = await getUserFromToken(token);

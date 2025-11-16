@@ -122,6 +122,11 @@ export class PostgresStorage implements IStorage {
     return user || undefined;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user || undefined;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
@@ -134,6 +139,13 @@ export class PostgresStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return user || undefined;
+  }
+
+  async updateUserLastLogin(id: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(users.id, id));
   }
 
   // Shared helper: Enforce session cap with advisory locking
@@ -186,6 +198,14 @@ export class PostgresStorage implements IStorage {
       
       return session;
     });
+  }
+
+  async getSession(id: string): Promise<Session | undefined> {
+    const [session] = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.id, id));
+    return session || undefined;
   }
 
   async getSessionByTokenHash(tokenHash: string): Promise<Session | undefined> {

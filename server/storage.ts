@@ -27,11 +27,14 @@ export interface IStorage {
   // User methods
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: string, updates: Partial<User>): Promise<User | undefined>;
+  updateUserLastLogin(id: string): Promise<void>;
   
   // Session methods
   createSession(session: InsertSession): Promise<Session>;
+  getSession(id: string): Promise<Session | undefined>;
   getSessionByTokenHash(tokenHash: string): Promise<Session | undefined>;
   getSessionsByUserId(userId: string): Promise<Session[]>;
   deleteSession(id: string): Promise<void>;
@@ -197,6 +200,12 @@ export class MemStorage implements IStorage {
     );
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.email === email,
+    );
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const id = randomUUID();
     const user: User = { 
@@ -224,6 +233,14 @@ export class MemStorage implements IStorage {
     return updated;
   }
 
+  async updateUserLastLogin(id: string): Promise<void> {
+    const user = this.users.get(id);
+    if (user) {
+      user.lastLoginAt = new Date();
+      this.users.set(id, user);
+    }
+  }
+
   // Session methods
   async createSession(insertSession: InsertSession): Promise<Session> {
     // Enforce max sessions per user
@@ -242,6 +259,10 @@ export class MemStorage implements IStorage {
     };
     this.sessions.set(id, session);
     return session;
+  }
+
+  async getSession(id: string): Promise<Session | undefined> {
+    return this.sessions.get(id);
   }
 
   async getSessionByTokenHash(tokenHash: string): Promise<Session | undefined> {
@@ -651,6 +672,7 @@ export class MemStorage implements IStorage {
         id,
         workspaceId,
         modelProvider: settings.modelProvider || 'openai',
+        autonomyLevel: settings.autonomyLevel || 'medium',
         extendedThinking: settings.extendedThinking || 'false',
         localFirst: settings.localFirst || 'false',
         autoFix: settings.autoFix || 'true',
