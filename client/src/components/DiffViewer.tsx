@@ -51,7 +51,7 @@ export default function DiffViewer({
               <DialogTitle className="text-lg font-semibold">
                 {filePath}
               </DialogTitle>
-              {oldVersion && (
+              {oldVersion ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Badge variant="outline" className="text-xs">
                     Version {oldVersion.version}
@@ -63,6 +63,13 @@ export default function DiffViewer({
                   <Badge variant="secondary" className="text-xs">
                     {oldVersion.changeType}
                   </Badge>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20">
+                    First Version
+                  </Badge>
+                  <span className="text-xs">No previous versions available for comparison</span>
                 </div>
               )}
             </div>

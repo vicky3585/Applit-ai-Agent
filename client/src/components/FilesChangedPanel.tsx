@@ -68,7 +68,7 @@ export default function FilesChangedPanel({ filesGenerated, workspaceId }: Files
     queryFn: async () => {
       if (!diffViewerFile || !workspaceId) return [];
       const response = await fetch(
-        `/api/workspaces/${workspaceId}/file-history?path=${encodeURIComponent(diffViewerFile.path)}&limit=1`,
+        `/api/workspaces/${workspaceId}/file-history?path=${encodeURIComponent(diffViewerFile.path)}&limit=1&skipLatest=true`,
         { credentials: 'include' }
       );
       if (!response.ok) {
@@ -240,7 +240,7 @@ export default function FilesChangedPanel({ filesGenerated, workspaceId }: Files
       </ScrollArea>
 
       {/* Diff Viewer Dialog */}
-      {diffViewerFile && (
+      {diffViewerFile && !isLoadingHistory && (
         <DiffViewer
           open={!!diffViewerFile}
           onClose={closeDiffViewer}
@@ -253,6 +253,16 @@ export default function FilesChangedPanel({ filesGenerated, workspaceId }: Files
             changeType: latestSnapshot.changeType,
           } : undefined}
         />
+      )}
+      
+      {/* Loading indicator for diff viewer */}
+      {diffViewerFile && isLoadingHistory && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <Card className="p-6 flex flex-col items-center gap-3">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <p className="text-sm text-muted-foreground">Loading file history...</p>
+          </Card>
+        </div>
       )}
     </div>
   );
