@@ -114,6 +114,29 @@ export default function AdminPage() {
     },
   });
 
+  // Change role mutation
+  const changeRoleMutation = useMutation({
+    mutationFn: async ({ userId, isAdmin }: { userId: string; isAdmin: boolean }) => {
+      await apiRequest("POST", `/api/admin/users/${userId}/role`, {
+        isAdmin,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+      toast({
+        title: "Success",
+        description: "User role updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to change user role",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleDeleteUser = (user: User) => {
     setSelectedUser(user);
     setDeleteDialogOpen(true);
@@ -123,6 +146,13 @@ export default function AdminPage() {
     setSelectedUser(user);
     setNewPassword("");
     setResetPasswordDialogOpen(true);
+  };
+
+  const handleToggleRole = (user: User) => {
+    changeRoleMutation.mutate({
+      userId: user.id,
+      isAdmin: !user.isAdmin,
+    });
   };
 
   const confirmDelete = () => {
@@ -201,15 +231,29 @@ export default function AdminPage() {
                         {user.username}
                       </TableCell>
                       <TableCell>
-                        {user.isAdmin ? (
-                          <Badge variant="default" data-testid={`badge-admin-${user.id}`}>
-                            Admin
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" data-testid={`badge-user-${user.id}`}>
-                            User
-                          </Badge>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {user.isAdmin ? (
+                            <Badge variant="default" data-testid={`badge-admin-${user.id}`}>
+                              Admin
+                            </Badge>
+                          ) : (
+                            <Badge variant="secondary" data-testid={`badge-user-${user.id}`}>
+                              User
+                            </Badge>
+                          )}
+                          {user.id !== currentUser?.id && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleToggleRole(user)}
+                              disabled={changeRoleMutation.isPending}
+                              data-testid={`button-toggle-role-${user.id}`}
+                              className="h-7 px-2"
+                            >
+                              {user.isAdmin ? "Make User" : "Make Admin"}
+                            </Button>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatDate(user.createdAt)}
