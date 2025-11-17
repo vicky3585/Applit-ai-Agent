@@ -634,6 +634,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/auth/change-password - Change user password
+  app.post("/api/auth/change-password", authMiddleware, async (req: any, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      
+      // Validate inputs
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ error: "Current password and new password are required" });
+      }
+      
+      if (newPassword.length < 8) {
+        return res.status(400).json({ error: "New password must be at least 8 characters long" });
+      }
+      
+      // Get user from database
+      const user = await storageInstance.getUserById(req.user.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      // Verify current password
+      const bcrypt = await import("bcryptjs");
+      const isValidPassword = await bcrypt.compare(currentPassword, user.passwordHash);
+      
+      if (!isValidPassword) {
+        return res.status(401).json({ error: "Current password is incorrect" });
+      }
+      
+      // Hash new password
+      const newPasswordHash = await bcrypt.hash(newPassword, 10);
+      
+      // Update password in database
+      await storageInstance.updateUserPassword(user.id, newPasswordHash);
+      
+      console.log(`[Auth] Password changed successfully for user ${user.id}`);
+      res.json({ message: "Password changed successfully" });
+    } catch (error: any) {
+      console.error("[Auth] Password change error:", error);
+      res.status(500).json({ error: error.message || "Failed to change password" });
+    }
+  });
+
   // ========================================
   // Multi-Project Management (Task V1-7)
   // ========================================

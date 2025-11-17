@@ -127,6 +127,11 @@ export class PostgresStorage implements IStorage {
     return user || undefined;
   }
 
+  async getUserById(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
@@ -145,6 +150,13 @@ export class PostgresStorage implements IStorage {
     await db
       .update(users)
       .set({ lastLoginAt: new Date() })
+      .where(eq(users.id, id));
+  }
+
+  async updateUserPassword(id: string, passwordHash: string): Promise<void> {
+    await db
+      .update(users)
+      .set({ passwordHash })
       .where(eq(users.id, id));
   }
 
