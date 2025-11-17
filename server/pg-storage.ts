@@ -174,6 +174,13 @@ export class PostgresStorage implements IStorage {
     await this.updateUserPassword(id, passwordHash);
   }
 
+  async updateUserRole(id: string, isAdmin: boolean): Promise<void> {
+    await db
+      .update(users)
+      .set({ isAdmin: isAdmin ? "true" : "false" })
+      .where(eq(users.id, id));
+  }
+
   // Shared helper: Enforce session cap with advisory locking
   // Uses PostgreSQL advisory locks for guaranteed mutual exclusion without requiring user row to exist
   private async withSessionLock<T>(

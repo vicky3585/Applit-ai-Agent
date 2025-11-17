@@ -40,6 +40,7 @@ export interface IStorage {
   getAllUsers(): Promise<User[]>;
   deleteUser(id: string): Promise<void>;
   resetUserPassword(id: string, passwordHash: string): Promise<void>;
+  updateUserRole(id: string, isAdmin: boolean): Promise<void>;
   
   // Session methods
   createSession(session: InsertSession): Promise<Session>;
@@ -290,6 +291,14 @@ export class MemStorage implements IStorage {
 
   async resetUserPassword(id: string, passwordHash: string): Promise<void> {
     await this.updateUserPassword(id, passwordHash);
+  }
+
+  async updateUserRole(id: string, isAdmin: boolean): Promise<void> {
+    const user = this.users.get(id);
+    if (user) {
+      user.isAdmin = isAdmin.toString() as "true" | "false";
+      this.users.set(id, user);
+    }
   }
 
   // Session methods
