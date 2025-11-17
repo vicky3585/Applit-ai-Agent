@@ -761,6 +761,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // POST /api/admin/users/:id/role - Change user role (admin only)
+  app.post("/api/admin/users/:id/role", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const { isAdmin } = req.body;
+      
+      if (typeof isAdmin !== "boolean") {
+        return res.status(400).json({ error: "isAdmin must be a boolean value" });
+      }
+      
+      // Prevent admin from changing their own role
+      if (userId === req.user?.userId) {
+        return res.status(400).json({ error: "Cannot change your own role" });
+      }
+      
+      // Check if user exists
+      const user = await storageInstance.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      // Update role
+      await storageInstance.updateUserRole(userId, isAdmin);
+      console.log(`[Admin] Role changed for user ${userId} (${user.email}) to ${isAdmin ? "admin" : "user"} by admin ${req.user?.userId}`);
+      res.json({ message: "User role updated successfully" });
+    } catch (error: any) {
+      console.error("[Admin] Change role error:", error);
+      res.status(500).json({ error: error.message || "Failed to change user role" });
+    }
+  });
+
   // ========================================
   // Multi-Project Management (Task V1-7)
   // ========================================
