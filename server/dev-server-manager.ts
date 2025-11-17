@@ -37,6 +37,13 @@ export class DevServerManager {
    * Start a dev server for a workspace
    */
   async startServer(workspaceId: string, workspacePath: string): Promise<DevServer | null> {
+    // Check if dev servers are available (requires Docker on local deployments)
+    const { ENV_CONFIG } = await import("@shared/environment");
+    if (!ENV_CONFIG.sandbox.available || ENV_CONFIG.sandbox.mode === "mock") {
+      console.log(`[DevServer] Dev servers disabled (Docker unavailable) - skipping server start for ${workspaceId}`);
+      return null;
+    }
+
     // Stop existing server if any
     await this.stopServer(workspaceId);
 

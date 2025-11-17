@@ -104,6 +104,7 @@ export function getEnvironmentConfig(): EnvironmentConfig {
   }
   
   // Local Ubuntu configuration
+  // Note: Docker availability will be validated at runtime
   return {
     env,
     database: {
@@ -111,8 +112,8 @@ export function getEnvironmentConfig(): EnvironmentConfig {
       url: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/webide",
     },
     sandbox: {
-      mode: "docker",
-      available: true,
+      mode: "docker", // Will be downgraded to "mock" if Docker unavailable
+      available: true, // Will be updated by runtime validation
     },
     codeServer: {
       mode: "docker",
@@ -212,6 +213,21 @@ export function getServiceUrl(service: "code-server" | "vllm" | "sandbox" | "pyt
 }
 
 export const ENV_CONFIG = getEnvironmentConfig();
+
+/**
+ * Update environment config at runtime after Docker validation
+ * Call this from server startup after validateDockerAccess()
+ */
+export function updateDockerAvailability(available: boolean): void {
+  if (!available && ENV_CONFIG.env === "local") {
+    console.log("[Environment] Docker unavailable - disabling dev servers and sandboxes");
+    ENV_CONFIG.sandbox.mode = "mock";
+    ENV_CONFIG.sandbox.available = false;
+    ENV_CONFIG.codeServer.mode = "mock";
+    ENV_CONFIG.pythonAgent.mode = "mock";
+    ENV_CONFIG.pythonAgent.available = false;
+  }
+}
 
 // Log environment info on startup
 console.log(`[Environment] Running on: ${ENV_CONFIG.env}`);

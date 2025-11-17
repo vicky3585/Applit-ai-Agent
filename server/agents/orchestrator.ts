@@ -49,12 +49,41 @@ export class AgentOrchestrator {
 
       state.logs.push(`[Orchestrator] Starting workflow with max ${maxAttempts} attempts`);
       state.logs.push(`[Orchestrator] Model: ${context.settings?.modelProvider || 'openai'}`);
+      
+      // Rewrite prompt if Docker unavailable and React requested
+      const { ENV_CONFIG } = await import("@shared/environment");
+      const devServersAvailable = ENV_CONFIG.sandbox.available && ENV_CONFIG.sandbox.mode !== "mock";
+      let effectivePrompt = context.prompt;
+      
+      if (!devServersAvailable) {
+        const promptLower = context.prompt.toLowerCase();
+        const wantsReactVite = promptLower.includes('react') || promptLower.includes('vite');
+        
+        if (wantsReactVite) {
+          state.logs.push(`⚠️ [Notice] Dev servers unavailable (Docker not installed) - generating static HTML/CSS/JavaScript instead of React`);
+          
+          // Rewrite prompt to request static HTML
+          effectivePrompt = context.prompt
+            .replace(/react/gi, 'vanilla JavaScript')
+            .replace(/vite/gi, 'vanilla JavaScript')
+            .replace(/\bcomponent\b/gi, 'section');
+          
+          effectivePrompt += '\n\n⚠️ IMPORTANT: Generate a SINGLE SELF-CONTAINED index.html file with inline CSS and JavaScript. No build tools, no package.json, no React. Use vanilla HTML/CSS/JavaScript only.';
+          
+          state.logs.push(`[Orchestrator] Rewrote prompt for static HTML generation`);
+          
+          // Update context with rewritten prompt so planner sees it
+          context.prompt = effectivePrompt;
+        }
+      }
+      
       onStateUpdate({ ...state });
 
       // Step 0: Clear existing files for React/Vite projects (template needs clean slate)
+      // Only do this if dev servers are available (otherwise we're doing static HTML)
       const promptLower = context.prompt.toLowerCase();
-      const isReactVite = promptLower.includes('react') || promptLower.includes('vite') || 
-                          promptLower.includes('counter') || promptLower.includes('component');
+      const wantsReactVite = promptLower.includes('react') || promptLower.includes('vite');
+      const isReactVite = wantsReactVite && ENV_CONFIG.sandbox.available && ENV_CONFIG.sandbox.mode !== "mock";
       
       if (isReactVite) {
         state.logs.push("[Orchestrator] Clearing existing files for fresh template generation...");

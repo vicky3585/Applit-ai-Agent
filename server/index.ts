@@ -64,6 +64,14 @@ app.use((req, res, next) => {
   await initializeAIClient();
   log("AI client ready");
 
+  // Validate Docker availability and update environment config
+  const { validateDockerAccess, updateDockerAvailability, ENV_CONFIG } = await import("@shared/environment");
+  const dockerAvailable = await validateDockerAccess();
+  updateDockerAvailability(dockerAvailable);
+  if (!dockerAvailable && ENV_CONFIG.env === "local") {
+    log("Docker unavailable - dev servers disabled, will serve static files only");
+  }
+
   // Inject storage into sandbox for multi-language execution
   sandbox.setStorage(storage);
   log("Sandbox configured with storage");

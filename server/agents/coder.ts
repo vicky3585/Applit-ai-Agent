@@ -18,12 +18,17 @@ export class CoderAgent {
   ): Promise<CodeGenerationResult> {
     const { prompt, existingFiles, openai, settings } = context;
 
-    // Detect if this is a React/Vite project (template-based approach)
-    const promptLower = prompt.toLowerCase();
-    const isReactVite = promptLower.includes('react') || promptLower.includes('vite') || 
-                        promptLower.includes('counter') || promptLower.includes('component');
+    // Check if dev servers are available (Docker required for React/Vite)
+    const { ENV_CONFIG } = await import("@shared/environment");
+    const devServersAvailable = ENV_CONFIG.sandbox.available && ENV_CONFIG.sandbox.mode !== "mock";
     
-    console.log(`[Coder] Template detection: isReactVite=${isReactVite}, existingFiles=${existingFiles.length}`);
+    // Detect if this is a React/Vite project (template-based approach)
+    // Note: Prompt rewriting happens in orchestrator when Docker unavailable
+    const promptLower = prompt.toLowerCase();
+    const wantsReactVite = promptLower.includes('react') || promptLower.includes('vite');
+    const isReactVite = wantsReactVite && devServersAvailable;
+    
+    console.log(`[Coder] Template detection: wantsReactVite=${wantsReactVite}, devServersAvailable=${devServersAvailable}, isReactVite=${isReactVite}, existingFiles=${existingFiles.length}`);
     
     if (isReactVite && existingFiles.length === 0) {
       console.log('[Coder] Using template-based generation for React/Vite project');
