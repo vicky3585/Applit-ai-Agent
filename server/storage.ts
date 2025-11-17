@@ -13,8 +13,10 @@ import {
   type WorkspaceSettings,
   type UpdateWorkspaceSettings,
   type YjsDocument,
+  type FileVersionHistory,
+  type FileChangeType,
 } from "@shared/schema";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 import { fileSync } from "./file-sync";
 
 // Security configuration
@@ -105,6 +107,13 @@ export interface IStorage {
   updateDeployment(id: string, updates: Partial<Pick<import("@shared/schema").Deployment, 'status' | 'buildLogs' | 'artifactPath' | 'url' | 'errorMessage' | 'completedAt'>>): Promise<import("@shared/schema").Deployment | undefined>;
   getDeployments(workspaceId: string): Promise<import("@shared/schema").Deployment[]>;
   getLatestDeployment(workspaceId: string): Promise<import("@shared/schema").Deployment | undefined>;
+  
+  // File version history methods (Phase 2 Task 6 - Unified Diff Viewer)
+  recordFileSnapshot(workspaceId: string, path: string, content: string, changeType: import("@shared/schema").FileChangeType, agentExecutionId?: string): Promise<import("@shared/schema").FileVersionHistory>;
+  getFileHistory(workspaceId: string, path: string, limit?: number): Promise<import("@shared/schema").FileVersionHistory[]>;
+  getLatestSnapshot(workspaceId: string, path: string): Promise<import("@shared/schema").FileVersionHistory | undefined>;
+  getFileVersion(workspaceId: string, path: string, version: string): Promise<import("@shared/schema").FileVersionHistory | undefined>;
+  pruneFileHistory(workspaceId: string, path: string, maxVersions?: number): Promise<number>;
 }
 
 export class MemStorage implements IStorage {
@@ -118,6 +127,7 @@ export class MemStorage implements IStorage {
   private codeExecutions: Map<string, CodeExecution>;
   private workspaceSettings: Map<string, WorkspaceSettings>;
   private yjsDocuments: Map<string, Map<string, YjsDocument>>; // workspace -> docName -> YjsDocument
+  private fileVersionHistory: Map<string, FileVersionHistory>; // id -> FileVersionHistory
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
 
@@ -132,6 +142,7 @@ export class MemStorage implements IStorage {
     this.codeExecutions = new Map();
     this.workspaceSettings = new Map();
     this.yjsDocuments = new Map();
+    this.fileVersionHistory = new Map();
   }
 
   /**
@@ -752,6 +763,107 @@ export class MemStorage implements IStorage {
 
   async getLatestDeployment(): Promise<never> {
     throw new Error("Deployments not supported in development environment");
+  }
+
+  // File Version History Methods (Phase 2 Task 6 - Unified Diff Viewer)
+
+  async recordFileSnapshot(
+    workspaceId: string,
+    path: string,
+    content: string,
+    changeType: FileChangeType,
+    agentExecutionId?: string
+  ): Promise<FileVersionHistory> {
+    // Compute content hash for deduplication
+    const contentHash = createHash('sha256').update(content).digest('hex');
+    
+    // Get existing versions for this file
+    const existingVersions = Array.from(this.fileVersionHistory.values())
+      .filter(v => v.workspaceId === workspaceId && v.path === path)
+      .sort((a, b) => parseInt(b.version) - parseInt(a.version));
+    
+    // Skip if content hasn't changed (deduplication)
+    if (existingVersions.length > 0 && existingVersions[0].contentHash === contentHash) {
+      return existingVersions[0];
+    }
+    
+    // Calculate next version number
+    const nextVersion = existingVersions.length > 0 
+      ? String(parseInt(existingVersions[0].version) + 1)
+      : "1";
+    
+    const id = randomUUID();
+    const snapshot: FileVersionHistory = {
+      id,
+      workspaceId,
+      path,
+      version: nextVersion,
+      content,
+      contentHash,
+      changeType,
+      agentExecutionId: agentExecutionId || null,
+      capturedAt: new Date(),
+    };
+    
+    this.fileVersionHistory.set(id, snapshot);
+    
+    // Auto-prune old versions (keep max 20 by default)
+    await this.pruneFileHistory(workspaceId, path, 20);
+    
+    return snapshot;
+  }
+
+  async getFileHistory(
+    workspaceId: string,
+    path: string,
+    limit?: number
+  ): Promise<FileVersionHistory[]> {
+    const versions = Array.from(this.fileVersionHistory.values())
+      .filter(v => v.workspaceId === workspaceId && v.path === path)
+      .sort((a, b) => parseInt(b.version) - parseInt(a.version));
+    
+    return limit ? versions.slice(0, limit) : versions;
+  }
+
+  async getLatestSnapshot(
+    workspaceId: string,
+    path: string
+  ): Promise<FileVersionHistory | undefined> {
+    const versions = await this.getFileHistory(workspaceId, path, 1);
+    return versions.length > 0 ? versions[0] : undefined;
+  }
+
+  async getFileVersion(
+    workspaceId: string,
+    path: string,
+    version: string
+  ): Promise<FileVersionHistory | undefined> {
+    return Array.from(this.fileVersionHistory.values()).find(
+      v => v.workspaceId === workspaceId && v.path === path && v.version === version
+    );
+  }
+
+  async pruneFileHistory(
+    workspaceId: string,
+    path: string,
+    maxVersions: number = 20
+  ): Promise<number> {
+    const versions = await this.getFileHistory(workspaceId, path);
+    
+    if (versions.length <= maxVersions) {
+      return 0;
+    }
+    
+    // Delete oldest versions beyond the limit
+    const toDelete = versions.slice(maxVersions);
+    let deletedCount = 0;
+    
+    for (const version of toDelete) {
+      this.fileVersionHistory.delete(version.id);
+      deletedCount++;
+    }
+    
+    return deletedCount;
   }
 }
 

@@ -158,6 +158,24 @@ export const yjsDocuments = pgTable("yjs_documents", {
   workspaceIdIdx: sql`CREATE INDEX IF NOT EXISTS yjs_documents_workspace_id_idx ON ${table} (${table.workspaceId})`,
 }));
 
+// Phase 2: File Version History (Task 6 - Unified Diff Viewer)
+export const fileVersionHistory = pgTable("file_version_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  workspaceId: varchar("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
+  path: text("path").notNull(),
+  version: text("version").notNull(), // Incremental version number per file
+  content: text("content").notNull(),
+  contentHash: text("content_hash").notNull(), // SHA-256 hash for deduplication
+  changeType: text("change_type").notNull(), // 'create' | 'update' | 'delete'
+  agentExecutionId: varchar("agent_execution_id"), // Optional link to agent execution
+  capturedAt: timestamp("captured_at").defaultNow(),
+}, (table) => ({
+  // Index for efficient querying: get latest versions by workspace + path
+  workspacePathVersionIdx: sql`CREATE INDEX IF NOT EXISTS file_version_workspace_path_version_idx ON ${table} (${table.workspaceId}, ${table.path}, ${table.version} DESC)`,
+  workspaceIdIdx: sql`CREATE INDEX IF NOT EXISTS file_version_workspace_id_idx ON ${table} (${table.workspaceId})`,
+  agentExecutionIdIdx: sql`CREATE INDEX IF NOT EXISTS file_version_agent_execution_id_idx ON ${table} (${table.agentExecutionId})`,
+}));
+
 export const collaborationChatMessages = pgTable("collaboration_chat_messages", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   workspaceId: varchar("workspace_id").notNull().references(() => workspaces.id, { onDelete: "cascade" }),
@@ -301,6 +319,19 @@ export const insertCollaborationChatMessageSchema = createInsertSchema(collabora
 
 export const collaboratorRoleSchema = z.enum(["owner", "editor", "viewer"]);
 
+// Phase 2: File Version History Schemas (Task 6)
+export const fileChangeTypeSchema = z.enum(["create", "update", "delete"]);
+
+export const insertFileVersionHistorySchema = createInsertSchema(fileVersionHistory).pick({
+  workspaceId: true,
+  path: true,
+  version: true,
+  content: true,
+  contentHash: true,
+  changeType: true,
+  agentExecutionId: true,
+});
+
 export type RegisterRequest = z.infer<typeof registerSchema>;
 export type LoginRequest = z.infer<typeof loginSchema>;
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -328,6 +359,9 @@ export type DeploymentStatus = z.infer<typeof deploymentStatusSchema>;
 export type Collaborator = typeof collaborators.$inferSelect;
 export type YjsDocument = typeof yjsDocuments.$inferSelect;
 export type CollaborationChatMessage = typeof collaborationChatMessages.$inferSelect;
+export type FileVersionHistory = typeof fileVersionHistory.$inferSelect;
+export type InsertFileVersionHistory = z.infer<typeof insertFileVersionHistorySchema>;
+export type FileChangeType = z.infer<typeof fileChangeTypeSchema>;
 
 // Agent Workflow State types (from Python agent service)
 export type AgentStep = "idle" | "planning" | "coding" | "testing" | "fixing" | "complete" | "failed";

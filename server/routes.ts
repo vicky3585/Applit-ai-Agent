@@ -828,6 +828,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       content,
       language
     );
+    
+    // Task 6a: No snapshot needed for create - the file itself is the initial version
+    // Snapshots are only captured for updates and deletions to track changes
+    
     res.json(file);
   });
 
@@ -843,6 +847,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
     
     const { content } = req.body;
+    
+    // Task 6a: Record file snapshot before updating (for diff viewer)
+    try {
+      await storageInstance.recordFileSnapshot(
+        file.workspaceId,
+        file.path,
+        file.content,
+        "update"
+      );
+    } catch (error) {
+      console.error("[FileHistory] Failed to record snapshot:", error);
+    }
+    
     const updatedFile = await storageInstance.updateFile(req.params.id, content);
     res.json(updatedFile);
   });
@@ -883,6 +900,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const workspace = await storageInstance.getWorkspace(file.workspaceId);
     if (!workspace || workspace.userId !== req.user.userId) {
       return res.status(403).json({ error: "Access denied: file belongs to another user's workspace" });
+    }
+    
+    // Task 6a: Record final snapshot before deletion (for diff viewer)
+    try {
+      await storageInstance.recordFileSnapshot(
+        file.workspaceId,
+        file.path,
+        file.content,
+        "delete"
+      );
+    } catch (error) {
+      console.error("[FileHistory] Failed to record deletion snapshot:", error);
     }
     
     await storageInstance.deleteFile(req.params.id);
