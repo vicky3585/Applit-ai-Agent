@@ -294,6 +294,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             status: state.status,
             currentStep: state.currentStep,
             progress: state.progress,
+            errors: state.errors || [],
           },
         }, clients);
 

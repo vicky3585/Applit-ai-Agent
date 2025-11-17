@@ -163,14 +163,20 @@ export default function ChatPanel({
       <div className="border-t p-4">
         <div className="space-y-2">
           {/* Error message when agent fails */}
-          {hasFailed && agentWorkflow?.errors && agentWorkflow.errors.length > 0 && (
+          {hasFailed && (
             <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20" data-testid="error-message">
               <div className="flex items-start gap-2">
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-destructive">Agent Failed</p>
-                  <p className="text-xs text-destructive/80 mt-1">
-                    {agentWorkflow.errors[0]}
-                  </p>
+                  <p className="text-sm font-medium text-destructive">Agent Workflow Failed</p>
+                  {agentWorkflow?.errors && agentWorkflow.errors.length > 0 ? (
+                    <p className="text-xs text-destructive/80 mt-1">
+                      {agentWorkflow.errors[0]}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-destructive/80 mt-1">
+                      The agent encountered an error and couldn't complete the task.
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground mt-2">
                     You can retry by sending a new message or refining your request.
                   </p>

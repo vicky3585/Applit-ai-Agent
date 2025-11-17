@@ -265,12 +265,20 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
       const workflow: AgentWorkflowState = {
         status: data.status === "complete" || data.status === "failed" ? data.status : "processing",
         current_step: data.status as AgentStep,
-        progress: 0.0,
+        progress: data.progress || 0.0,
         logs: [],
         files_generated: [],
-        errors: [],
+        errors: data.errors || [],
       };
+      setAgentWorkflow(workflow);
       setAgentStatus(deriveAgentStatus(workflow));
+      
+      // Reset streaming state when workflow completes or fails
+      if (data.status === "complete" || data.status === "failed") {
+        setIsStreaming(false);
+        setStreamingMessage("");
+      }
+      
       addLog("info", `Agent state: ${data.status}`);
     });
 
@@ -311,6 +319,19 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
       setChatMessages((prev) => [...prev, completeMessage]);
       setStreamingMessage("");
       setIsStreaming(false);
+    });
+
+    ws.on("agent_error", (data: any) => {
+      // Add error message to chat and reset streaming state
+      const errorMessage = {
+        role: "agent",
+        content: data.message || "Agent encountered an error",
+        timestamp: new Date(),
+      };
+      setChatMessages((prev) => [...prev, errorMessage]);
+      setStreamingMessage("");
+      setIsStreaming(false);
+      addLog("error", data.message || "Agent error");
     });
 
     ws.on("terminal_output", (data: { chunk: string }) => {
