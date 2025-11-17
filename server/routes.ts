@@ -426,14 +426,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Uses authMiddleware to support both header and cookie authentication
   app.get("/api/auth/me", authMiddleware, async (req, res) => {
     try {
-      // User is already authenticated and attached by authMiddleware
-      // req.user contains {userId, username} from token
-      // Return user data directly (password not included in req.user)
-      res.json({
-        id: req.user!.userId,
-        username: req.user!.username,
-        email: req.user!.email || null, // Email may not be in token payload
-      });
+      // Fetch full user from database to get all fields including isAdmin
+      const user = await storageInstance.getUserById(req.user!.userId);
+      
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      // Return user data without password hash
+      const { passwordHash, password, ...safeUser } = user as any;
+      
+      // Convert text isAdmin field to proper boolean
+      const responseUser = {
+        ...safeUser,
+        isAdmin: safeUser.isAdmin === "true" || safeUser.isAdmin === true,
+      };
+      
+      res.json(responseUser);
     } catch (error: any) {
       console.error("[Auth] Get user error:", error);
       res.status(500).json({ error: error.message || "Failed to get user" });
@@ -685,8 +694,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/admin/users", authMiddleware, adminMiddleware, async (req, res) => {
     try {
       const users = await storageInstance.getAllUsers();
-      // Remove sensitive password hashes from response
-      const safeUsers = users.map(({ passwordHash, ...user }) => user);
+      // Remove sensitive password hashes from response and convert isAdmin to proper boolean
+      const safeUsers = users.map(({ passwordHash, password, ...user }: any) => ({
+        ...user,
+        isAdmin: user.isAdmin === "true" || user.isAdmin === true,
+      }));
       res.json(safeUsers);
     } catch (error: any) {
       console.error("[Admin] Get users error:", error);

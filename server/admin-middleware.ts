@@ -27,7 +27,16 @@ export async function adminMiddleware(
     const storageInstance = await storage;
     const user = await storageInstance.getUserById(req.user.userId);
 
-    if (!user || !user.isAdmin) {
+    if (!user) {
+      res.status(403).json({ error: "Admin privileges required" });
+      return;
+    }
+
+    // Convert isAdmin from text "true"/"false" to boolean
+    // Database stores isAdmin as text, so "false" is truthy without conversion
+    const isAdmin = user.isAdmin === true || user.isAdmin === "true";
+    
+    if (!isAdmin) {
       res.status(403).json({ error: "Admin privileges required" });
       return;
     }

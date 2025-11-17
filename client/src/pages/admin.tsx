@@ -39,6 +39,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { Shield, Trash2, KeyRound, ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
@@ -54,6 +55,7 @@ type User = {
 export default function AdminPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { user: currentUser } = useAuth();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -226,15 +228,17 @@ export default function AdminPage() {
                             <KeyRound className="h-4 w-4 mr-1" />
                             Reset Password
                           </Button>
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            onClick={() => handleDeleteUser(user)}
-                            data-testid={`button-delete-${user.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            Delete
-                          </Button>
+                          {user.id !== currentUser?.id && (
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDeleteUser(user)}
+                              data-testid={`button-delete-${user.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
