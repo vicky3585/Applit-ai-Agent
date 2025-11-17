@@ -1071,7 +1071,10 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
               />
             </TabsContent>
             <TabsContent value="files" className="flex-1 m-0 overflow-hidden">
-              <FilesChangedPanel filesGenerated={agentWorkflow?.files_generated || []} />
+              <FilesChangedPanel 
+                filesGenerated={agentWorkflow?.files_generated || []} 
+                workspaceId={workspaceId}
+              />
             </TabsContent>
             <TabsContent value="execution" className="flex-1 m-0 overflow-hidden">
               <CodeExecutionPanel

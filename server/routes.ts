@@ -820,6 +820,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(files);
   });
 
+  // Task 6b: Get file version history for diff viewer
+  app.get("/api/workspaces/:id/file-history", ...requireWorkspaceAccess, async (req, res) => {
+    const { path, limit } = req.query;
+    
+    if (!path || typeof path !== 'string') {
+      return res.status(400).json({ error: "File path is required" });
+    }
+    
+    try {
+      const parsedLimit = limit ? parseInt(limit as string) : undefined;
+      const history = await storageInstance.getFileHistory(req.params.id, path, parsedLimit);
+      res.json(history);
+    } catch (error: any) {
+      console.error("[FileHistory] Failed to get file history:", error);
+      res.status(500).json({ error: "Failed to retrieve file history" });
+    }
+  });
+
   app.post("/api/workspaces/:id/files", ...requireWorkspaceAccess, async (req, res) => {
     const { path, content, language } = req.body;
     const file = await storageInstance.createFile(

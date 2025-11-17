@@ -3,8 +3,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { FileText, ChevronDown, ChevronRight, Eye, EyeOff, GitCompare } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useQuery } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
+import DiffViewer from "./DiffViewer";
+import type { FileVersionHistory } from "@shared/schema";
 
 interface FileChange {
   path: string;
@@ -15,11 +19,14 @@ interface FileChange {
 
 interface FilesChangedPanelProps {
   filesGenerated: FileChange[];
+  workspaceId?: string;
 }
 
-export default function FilesChangedPanel({ filesGenerated }: FilesChangedPanelProps) {
+export default function FilesChangedPanel({ filesGenerated, workspaceId }: FilesChangedPanelProps) {
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const [showingDiff, setShowingDiff] = useState<Set<string>>(new Set());
+  const [diffViewerFile, setDiffViewerFile] = useState<FileChange | null>(null);
+  const { toast } = useToast();
 
   const toggleFileExpanded = (path: string) => {
     setExpandedFiles(prev => {
@@ -44,6 +51,41 @@ export default function FilesChangedPanel({ filesGenerated }: FilesChangedPanelP
       return next;
     });
   };
+
+  const openDiffViewer = (file: FileChange) => {
+    setDiffViewerFile(file);
+  };
+
+  const closeDiffViewer = () => {
+    setDiffViewerFile(null);
+  };
+
+  // Fetch file history for the selected file
+  const { data: fileHistory, isLoading: isLoadingHistory, error: historyError } = useQuery<FileVersionHistory[]>({
+    queryKey: [`/api/workspaces/${workspaceId}/file-history`, diffViewerFile?.path],
+    enabled: !!diffViewerFile && !!workspaceId,
+    retry: false,
+    queryFn: async () => {
+      if (!diffViewerFile || !workspaceId) return [];
+      const response = await fetch(
+        `/api/workspaces/${workspaceId}/file-history?path=${encodeURIComponent(diffViewerFile.path)}&limit=1`,
+        { credentials: 'include' }
+      );
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(errorText || 'Failed to fetch file history');
+      }
+      return response.json();
+    },
+    onError: (error: any) => {
+      console.error("[FileHistory] Failed to fetch history:", error);
+      toast({
+        title: "Failed to load file history",
+        description: "Could not retrieve previous versions for diff comparison. The file may not have any history yet.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const getFileExtension = (path: string): string => {
     const parts = path.split('.');
@@ -72,25 +114,39 @@ export default function FilesChangedPanel({ filesGenerated }: FilesChangedPanelP
           <span className="text-xs font-mono text-muted-foreground">
             {lines.length} lines
           </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 text-xs gap-1"
-            onClick={() => toggleDiffView(file.path)}
-            data-testid={`button-toggle-diff-${file.path}`}
-          >
-            {showingDiff.has(file.path) ? (
-              <>
-                <EyeOff className="w-3 h-3" />
-                Hide Preview
-              </>
-            ) : (
-              <>
-                <Eye className="w-3 h-3" />
-                Show Preview
-              </>
+          <div className="flex items-center gap-1">
+            {workspaceId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-xs gap-1"
+                onClick={() => openDiffViewer(file)}
+                data-testid={`button-view-diff-${file.path}`}
+              >
+                <GitCompare className="w-3 h-3" />
+                View Diff
+              </Button>
             )}
-          </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 text-xs gap-1"
+              onClick={() => toggleDiffView(file.path)}
+              data-testid={`button-toggle-preview-${file.path}`}
+            >
+              {showingDiff.has(file.path) ? (
+                <>
+                  <EyeOff className="w-3 h-3" />
+                  Hide Preview
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3 h-3" />
+                  Show Preview
+                </>
+              )}
+            </Button>
+          </div>
         </div>
         {showingDiff.has(file.path) && (
           <ScrollArea className="max-h-96">
@@ -114,6 +170,8 @@ export default function FilesChangedPanel({ filesGenerated }: FilesChangedPanelP
       </div>
     );
   }
+
+  const latestSnapshot = fileHistory && fileHistory.length > 0 ? fileHistory[0] : undefined;
 
   return (
     <div className="flex flex-col h-full">
@@ -180,6 +238,22 @@ export default function FilesChangedPanel({ filesGenerated }: FilesChangedPanelP
           })}
         </div>
       </ScrollArea>
+
+      {/* Diff Viewer Dialog */}
+      {diffViewerFile && (
+        <DiffViewer
+          open={!!diffViewerFile}
+          onClose={closeDiffViewer}
+          filePath={diffViewerFile.path}
+          oldContent={latestSnapshot?.content || ""}
+          newContent={diffViewerFile.content}
+          oldVersion={latestSnapshot ? {
+            version: latestSnapshot.version,
+            capturedAt: latestSnapshot.capturedAt.toString(),
+            changeType: latestSnapshot.changeType,
+          } : undefined}
+        />
+      )}
     </div>
   );
 }
