@@ -275,9 +275,10 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
       setAgentWorkflow(workflow);
       setAgentStatus(deriveAgentStatus(workflow));
       
-      // Reset streaming state when workflow completes or fails
-      if (data.status === "complete" || data.status === "failed") {
-        console.log("[IDE] Workflow ended - resetting isStreaming and streamingMessage");
+      // Reset generating and streaming state when workflow completes, fails, or is idle
+      if (data.status === "complete" || data.status === "failed" || data.status === "idle") {
+        console.log("[IDE] Workflow ended or idle - resetting isGenerating, isStreaming and streamingMessage");
+        setIsGenerating(false);
         setIsStreaming(false);
         setStreamingMessage("");
       }
