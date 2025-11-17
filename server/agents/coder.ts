@@ -83,9 +83,9 @@ ${previousError ? `\n⚠️ Previous attempt failed: ${previousError}\nFix the e
 
       const response = await withOpenAIRetry(() =>
         openai.chat.completions.create({
-          model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
+          model: settings?.modelProvider === "openai" ? "gpt-4-turbo-preview" : "gpt-3.5-turbo-1106",
           messages: [
-            { role: "system", content: "You are a React component generator. Generate clean, working TypeScript React components." },
+            { role: "system", content: "You are a React component generator. Generate clean, working TypeScript React components. Always respond with valid JSON." },
             { role: "user", content: componentPrompt }
           ],
           temperature: 0.3,
@@ -243,9 +243,9 @@ ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError
 
     const response = await withOpenAIRetry(() =>
       openai.chat.completions.create({
-        model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
+        model: settings?.modelProvider === "openai" ? "gpt-4-turbo-preview" : "gpt-3.5-turbo-1106",
         messages: [
-          { role: "system", content: systemPrompt },
+          { role: "system", content: systemPrompt + "\n\nAlways respond with valid JSON." },
           {
             role: "user",
             content: `Plan:\n${plan}\n\nUser request: ${prompt}${existingFilesContext}\n\nGenerate the code files as JSON.`
