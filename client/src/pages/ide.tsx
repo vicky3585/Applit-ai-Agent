@@ -677,25 +677,62 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
 
   const handleExportWorkspace = async () => {
     try {
-      // Trigger download by navigating to the export endpoint
       const exportUrl = `/api/workspaces/${workspaceId}/export`;
       
-      // Create a temporary link and trigger download
+      // Show initial toast
+      toast({
+        title: "Exporting workspace",
+        description: "Preparing your workspace for download...",
+      });
+      
+      // Fetch the ZIP file with credentials
+      const response = await fetch(exportUrl, {
+        method: 'GET',
+        credentials: 'include',
+      });
+      
+      // Check for errors
+      if (!response.ok) {
+        let errorMessage = "Failed to export workspace";
+        
+        // Try to parse error message from server
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } catch {
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        
+        toast({
+          title: "Export failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      // Get the blob and trigger download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
       const link = document.createElement('a');
-      link.href = exportUrl;
+      link.href = url;
       link.download = `workspace-${workspaceId}.zip`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
+      // Clean up the blob URL
+      window.URL.revokeObjectURL(url);
+      
       toast({
-        title: "Exporting workspace",
-        description: "Your workspace is being downloaded as a ZIP file",
+        title: "Export successful",
+        description: "Your workspace has been downloaded",
       });
     } catch (error: any) {
       toast({
         title: "Export failed",
-        description: error.message || "Failed to export workspace",
+        description: error.message || "An unexpected error occurred",
         variant: "destructive",
       });
     }
