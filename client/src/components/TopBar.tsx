@@ -26,6 +26,7 @@ interface TopBarProps {
   onTemplates?: () => void;
   onGitHub?: () => void;
   onExport?: () => void;
+  isExporting?: boolean;
   followingUserName?: string | null;
   onStopFollowing?: () => void;
 }
@@ -42,6 +43,7 @@ export default function TopBar({
   onTemplates,
   onGitHub,
   onExport,
+  isExporting = false,
   followingUserName,
   onStopFollowing,
 }: TopBarProps) {
@@ -220,10 +222,12 @@ export default function TopBar({
           size="icon" 
           variant="ghost"
           onClick={onExport}
-          title="Export workspace as ZIP"
+          disabled={isExporting}
+          title={isExporting ? "Exporting..." : "Export workspace as ZIP"}
           data-testid="button-export"
+          className={isExporting ? "opacity-50 cursor-not-allowed" : ""}
         >
-          <Download className="w-4 h-4" />
+          <Download className={isExporting ? "w-4 h-4 animate-pulse" : "w-4 h-4"} />
         </Button>
         
         <Button 

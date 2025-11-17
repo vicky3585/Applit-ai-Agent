@@ -101,6 +101,9 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
 
   // Follow mode state (Task 7.10: Follow user's view and cursor)
   const [followingUserId, setFollowingUserId] = useState<string | null>(null);
+  
+  // Export state (Task 5b: Loading state for export)
+  const [isExporting, setIsExporting] = useState(false);
 
   // Fetch files (with error handling for deleted workspaces)
   const { data: files = [], error: filesError } = useQuery<any[]>({
@@ -676,7 +679,11 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
   };
 
   const handleExportWorkspace = async () => {
+    // Prevent duplicate exports
+    if (isExporting) return;
+    
     try {
+      setIsExporting(true);
       const exportUrl = `/api/workspaces/${workspaceId}/export`;
       
       // Show initial toast
@@ -735,6 +742,8 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
         description: error.message || "An unexpected error occurred",
         variant: "destructive",
       });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -908,6 +917,7 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
         onPackages={() => setPackagesOpen(true)}
         onSettings={() => setSettingsOpen(true)}
         onExport={handleExportWorkspace}
+        isExporting={isExporting}
         followingUserName={followingUserId ? workspaceUsers.find(u => u.userId === followingUserId)?.name : null}
         onStopFollowing={() => setFollowingUserId(null)}
       />
