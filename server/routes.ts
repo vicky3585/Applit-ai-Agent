@@ -9,6 +9,7 @@ import OpenAI from "openai";
 import { ENV_CONFIG, validateDockerAccess, validateDatabaseAccess, getServiceUrl } from "@shared/environment";
 import { installPackageRequestSchema, triggerDeploymentSchema } from "@shared/schema";
 import { authMiddleware } from "./auth-middleware";
+import { adminMiddleware } from "./admin-middleware";
 import { createWorkspaceOwnershipMiddleware, createRequireWorkspaceAccess } from "./workspace-ownership-middleware";
 import { templates, getTemplateById } from "./templates";
 import * as github from "./github";
@@ -673,6 +674,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("[Auth] Password change error:", error);
       res.status(500).json({ error: error.message || "Failed to change password" });
+    }
+  });
+
+  // ========================================
+  // Admin Management Routes
+  // ========================================
+
+  // GET /api/admin/users - Get all users (admin only)
+  app.get("/api/admin/users", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const users = await storageInstance.getAllUsers();
+      // Remove sensitive password hashes from response
+      const safeUsers = users.map(({ passwordHash, ...user }) => user);
+      res.json(safeUsers);
+    } catch (error: any) {
+      console.error("[Admin] Get users error:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch users" });
+    }
+  });
+
+  // DELETE /api/admin/users/:id - Delete user (admin only)
+  app.delete("/api/admin/users/:id", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const userId = req.params.id;
+      
+      // Prevent admin from deleting themselves
+      if (userId === req.user?.userId) {
+        return res.status(400).json({ error: "Cannot delete your own account" });
+      }
+      
+      // Check if user exists
+      const user = await storageInstance.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      await storageInstance.deleteUser(userId);
+      console.log(`[Admin] User ${userId} (${user.email}) deleted by admin ${req.user?.userId}`);
+      res.json({ message: "User deleted successfully" });
+    } catch (error: any) {
+      console.error("[Admin] Delete user error:", error);
+      res.status(500).json({ error: error.message || "Failed to delete user" });
+    }
+  });
+
+  // POST /api/admin/users/:id/reset-password - Reset user password (admin only)
+  app.post("/api/admin/users/:id/reset-password", authMiddleware, adminMiddleware, async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const { newPassword } = req.body;
+      
+      if (!newPassword || newPassword.length < 8) {
+        return res.status(400).json({ error: "New password must be at least 8 characters long" });
+      }
+      
+      // Check if user exists
+      const user = await storageInstance.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      // Hash new password
+      const bcrypt = await import("bcryptjs");
+      const newPasswordHash = await bcrypt.hash(newPassword, 10);
+      
+      // Reset password
+      await storageInstance.resetUserPassword(userId, newPasswordHash);
+      console.log(`[Admin] Password reset for user ${userId} (${user.email}) by admin ${req.user?.userId}`);
+      res.json({ message: "Password reset successfully" });
+    } catch (error: any) {
+      console.error("[Admin] Reset password error:", error);
+      res.status(500).json({ error: error.message || "Failed to reset password" });
     }
   });
 
