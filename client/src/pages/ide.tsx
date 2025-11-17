@@ -261,6 +261,8 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
     wsRef.current = ws;
 
     ws.on("agent_state", (data: any) => {
+      console.log("[IDE] Received agent_state:", data);
+      
       // ✅ Use centralized helper (accepts string and maps to AgentStep)
       const workflow: AgentWorkflowState = {
         status: data.status === "complete" || data.status === "failed" ? data.status : "processing",
@@ -275,6 +277,7 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
       
       // Reset streaming state when workflow completes or fails
       if (data.status === "complete" || data.status === "failed") {
+        console.log("[IDE] Workflow ended - resetting isStreaming and streamingMessage");
         setIsStreaming(false);
         setStreamingMessage("");
       }
@@ -322,6 +325,8 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
     });
 
     ws.on("agent_error", (data: any) => {
+      console.log("[IDE] Received agent_error:", data);
+      
       // Add error message to chat and reset streaming state
       const errorMessage = {
         role: "agent",
@@ -331,6 +336,13 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
       setChatMessages((prev) => [...prev, errorMessage]);
       setStreamingMessage("");
       setIsStreaming(false);
+      
+      // Update workflow status to "failed" to re-enable controls
+      setAgentWorkflow((prev) => {
+        console.log("[IDE] Updating workflow status to failed, prev:", prev);
+        return prev ? { ...prev, status: "failed" } : null;
+      });
+      
       addLog("error", data.message || "Agent error");
     });
 

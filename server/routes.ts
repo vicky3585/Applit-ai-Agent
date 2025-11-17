@@ -347,6 +347,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           finalMessage
         );
 
+        // Send final agent_state with status "failed"
+        broadcastToWorkspace(workspaceId, {
+          type: "agent_state",
+          data: {
+            status: "failed",
+            currentStep: result.currentStep,
+            progress: result.progress,
+            errors: result.errors || [],
+          },
+        }, clients);
+
         broadcastToWorkspace(workspaceId, {
           type: "agent_error",
           data: { message: finalMessage },
@@ -365,6 +376,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         files_generated: [],
         errors: [error.message],
       });
+
+      // Send final agent_state with status "failed"
+      broadcastToWorkspace(workspaceId, {
+        type: "agent_state",
+        data: {
+          status: "failed",
+          currentStep: "idle",
+          progress: 0.0,
+          errors: [error.message],
+        },
+      }, clients);
 
       broadcastToWorkspace(workspaceId, {
         type: "agent_error",
