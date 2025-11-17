@@ -156,8 +156,22 @@ export class PostgresStorage implements IStorage {
   async updateUserPassword(id: string, passwordHash: string): Promise<void> {
     await db
       .update(users)
-      .set({ passwordHash })
+      .set({ password: passwordHash })
       .where(eq(users.id, id));
+  }
+
+  // Admin methods
+  async getAllUsers(): Promise<User[]> {
+    return await db.select().from(users);
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    // Cascade delete will handle sessions and workspaces automatically if FK constraints are set
+    await db.delete(users).where(eq(users.id, id));
+  }
+
+  async resetUserPassword(id: string, passwordHash: string): Promise<void> {
+    await this.updateUserPassword(id, passwordHash);
   }
 
   // Shared helper: Enforce session cap with advisory locking

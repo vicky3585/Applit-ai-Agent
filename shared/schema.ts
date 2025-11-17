@@ -8,6 +8,7 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   email: text("email").unique(),
   password: text("password").notNull(), // bcrypt hash
+  isAdmin: text("is_admin").default("false").notNull(), // Admin role for user management
   isActive: text("is_active").default("true").notNull(),
   emailVerifiedAt: timestamp("email_verified_at"),
   failedLoginCount: text("failed_login_count").default("0").notNull(),

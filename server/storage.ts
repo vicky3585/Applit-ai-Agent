@@ -36,6 +36,11 @@ export interface IStorage {
   updateUserPassword(id: string, passwordHash: string): Promise<void>;
   updateUserLastLogin(id: string): Promise<void>;
   
+  // Admin methods
+  getAllUsers(): Promise<User[]>;
+  deleteUser(id: string): Promise<void>;
+  resetUserPassword(id: string, passwordHash: string): Promise<void>;
+  
   // Session methods
   createSession(session: InsertSession): Promise<Session>;
   getSession(id: string): Promise<Session | undefined>;
@@ -261,9 +266,30 @@ export class MemStorage implements IStorage {
   async updateUserPassword(id: string, passwordHash: string): Promise<void> {
     const user = this.users.get(id);
     if (user) {
-      user.passwordHash = passwordHash;
+      user.password = passwordHash;
       this.users.set(id, user);
     }
+  }
+
+  // Admin methods
+  async getAllUsers(): Promise<User[]> {
+    return Array.from(this.users.values());
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    this.users.delete(id);
+    // Also delete user's sessions
+    const userSessions = Array.from(this.sessions.values())
+      .filter(s => s.userId === id);
+    userSessions.forEach(s => this.sessions.delete(s.id));
+    // Also delete user's workspaces
+    const userWorkspaces = Array.from(this.workspaces.values())
+      .filter(w => w.userId === id);
+    userWorkspaces.forEach(w => this.workspaces.delete(w.id));
+  }
+
+  async resetUserPassword(id: string, passwordHash: string): Promise<void> {
+    await this.updateUserPassword(id, passwordHash);
   }
 
   // Session methods
