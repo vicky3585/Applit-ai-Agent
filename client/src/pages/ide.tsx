@@ -159,7 +159,13 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
         if (response.ok) {
           const status: AgentWorkflowState = await response.json();
           failureCount = 0; // Reset on success
-          setAgentWorkflow(status);
+          
+          // Only set workflow if it's not idle (don't show idle workflows on initial load)
+          if (status.status !== "idle") {
+            setAgentWorkflow(status);
+          } else {
+            setAgentWorkflow(null); // Clear idle workflows
+          }
           setAgentStatus(deriveAgentStatus(status)); // ✅ Use centralized helper
 
           // Stop polling if complete or failed (with deduplication)
@@ -263,27 +269,37 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
     ws.on("agent_state", (data: any) => {
       console.log("[IDE] Received agent_state:", data);
       
-      // ✅ Use centralized helper (accepts string and maps to AgentStep)
-      const workflow: AgentWorkflowState = {
-        status: data.status === "complete" || data.status === "failed" ? data.status : "processing",
-        current_step: data.status as AgentStep,
-        progress: data.progress || 0.0,
-        logs: [],
-        files_generated: [],
-        errors: data.errors || [],
-      };
-      setAgentWorkflow(workflow);
-      setAgentStatus(deriveAgentStatus(workflow));
-      
-      // Reset generating and streaming state when workflow completes, fails, or is idle
-      if (data.status === "complete" || data.status === "failed" || data.status === "idle") {
-        console.log("[IDE] Workflow ended or idle - resetting isGenerating, isStreaming and streamingMessage");
+      // Clear workflow if idle, otherwise update it
+      if (data.status === "idle") {
+        setAgentWorkflow(null);
+        setAgentStatus("idle");
         setIsGenerating(false);
         setIsStreaming(false);
         setStreamingMessage("");
+        addLog("info", "Agent state: idle");
+      } else {
+        // ✅ Use centralized helper (accepts string and maps to AgentStep)
+        const workflow: AgentWorkflowState = {
+          status: data.status === "complete" || data.status === "failed" ? data.status : "processing",
+          current_step: data.status as AgentStep,
+          progress: data.progress || 0.0,
+          logs: [],
+          files_generated: [],
+          errors: data.errors || [],
+        };
+        setAgentWorkflow(workflow);
+        setAgentStatus(deriveAgentStatus(workflow));
+        
+        // Reset generating and streaming state when workflow completes or fails
+        if (data.status === "complete" || data.status === "failed") {
+          console.log("[IDE] Workflow ended - resetting isGenerating, isStreaming and streamingMessage");
+          setIsGenerating(false);
+          setIsStreaming(false);
+          setStreamingMessage("");
+        }
+        
+        addLog("info", `Agent state: ${data.status}`);
       }
-      
-      addLog("info", `Agent state: ${data.status}`);
     });
 
     ws.on("agent_workflow", (data: AgentWorkflowState) => {
@@ -937,15 +953,45 @@ function IDEContent({ workspaceId }: { workspaceId: string }) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [followingUserId]);
 
+  // Handler to focus chat input when "Run Agent" is clicked
+  const handleRunAgentClick = () => {
+    console.log("Run agent");
+    // Switch to chat tab to let user enter a prompt
+    setRightPanelTab("chat");
+    // Focus chat input after a short delay to ensure panel is visible
+    setTimeout(() => {
+      const chatInput = document.querySelector('[data-testid="textarea-chat-input"]') as HTMLTextAreaElement;
+      if (chatInput) {
+        chatInput.focus();
+        toast({
+          title: "Ready for Input",
+          description: "Enter a prompt to start the AI agent workflow",
+        });
+      }
+    }, 100);
+  };
+  
+  const handleResetAgent = () => {
+    console.log("Reset agent");
+    setAgentWorkflow(null);
+    setAgentStatus("idle");
+    setIsGenerating(false);
+    completionHandledRef.current = false;
+    toast({
+      title: "Agent Reset",
+      description: "Workflow has been cleared",
+    });
+  };
+
   return (
     <div className="h-screen flex flex-col bg-background">
       <TopBar
         workspaceId={workspaceId}
         workspaceName="my-project"
         agentStatus={agentStatus}
-        onRunAgent={() => console.log("Run agent")}
+        onRunAgent={handleRunAgentClick}
         onPauseAgent={() => console.log("Pause agent")}
-        onResetAgent={() => console.log("Reset agent")}
+        onResetAgent={handleResetAgent}
         onTemplates={() => setTemplatesOpen(true)}
         onGitHub={() => setGithubBrowserOpen(true)}
         onPackages={() => setPackagesOpen(true)}
