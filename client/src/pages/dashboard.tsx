@@ -11,7 +11,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { Plus, Trash2, FolderOpen, Code2, LogOut, Sparkles, Key } from "lucide-react";
+import { Plus, Trash2, FolderOpen, Code2, LogOut, Sparkles, Key, Shield } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 interface Workspace {
@@ -301,6 +301,12 @@ export default function Dashboard() {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  {user?.isAdmin && (
+                    <DropdownMenuItem data-testid="menuitem-admin-panel" onClick={() => navigate("/admin")}>
+                      <Shield className="mr-2 h-4 w-4" />
+                      <span>Admin Panel</span>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem data-testid="menuitem-change-password" onClick={() => setPasswordDialogOpen(true)}>
                     <Key className="mr-2 h-4 w-4" />
                     <span>Change Password</span>

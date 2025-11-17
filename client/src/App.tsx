@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/protected-route";
 import AuthPage from "@/pages/auth";
 import Dashboard from "@/pages/dashboard";
 import IDE from "@/pages/ide";
+import AdminPage from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -29,6 +30,11 @@ function Router() {
       <Route path="/dashboard">
         <ProtectedRoute>
           <Dashboard />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/admin">
+        <ProtectedRoute>
+          <AdminPage />
         </ProtectedRoute>
       </Route>
       <Route path="/ide/:workspaceId">
