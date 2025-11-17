@@ -69,14 +69,13 @@ BE LENIENT - Only fail code that is genuinely broken. If the code will run and p
     try {
       const response = await withOpenAIRetry(() =>
         openai.chat.completions.create({
-          model: settings?.modelProvider === "openai" ? "gpt-4-turbo-preview" : "gpt-3.5-turbo-1106",
+          model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
           messages: [
-            { role: "system", content: systemPrompt + "\n\nAlways respond with valid JSON." },
+            { role: "system", content: systemPrompt + "\n\nALWAYS respond with valid JSON in the exact format specified." },
             { role: "user", content: `Validate this code:\n\n${filesContext}` }
           ],
           temperature: 0.2,
           max_tokens: 500,
-          response_format: { type: "json_object" },
         })
       );
 

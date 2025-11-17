@@ -83,14 +83,13 @@ ${previousError ? `\n⚠️ Previous attempt failed: ${previousError}\nFix the e
 
       const response = await withOpenAIRetry(() =>
         openai.chat.completions.create({
-          model: settings?.modelProvider === "openai" ? "gpt-4-turbo-preview" : "gpt-3.5-turbo-1106",
+          model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
           messages: [
-            { role: "system", content: "You are a React component generator. Generate clean, working TypeScript React components. Always respond with valid JSON." },
+            { role: "system", content: "You are a React component generator. Generate clean, working TypeScript React components. ALWAYS respond with valid JSON in the exact format specified." },
             { role: "user", content: componentPrompt }
           ],
           temperature: 0.3,
           max_tokens: 2048,
-          response_format: { type: "json_object" },
         })
       );
 
@@ -243,9 +242,9 @@ ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError
 
     const response = await withOpenAIRetry(() =>
       openai.chat.completions.create({
-        model: settings?.modelProvider === "openai" ? "gpt-4-turbo-preview" : "gpt-3.5-turbo-1106",
+        model: settings?.modelProvider === "openai" ? "gpt-4" : "gpt-3.5-turbo",
         messages: [
-          { role: "system", content: systemPrompt + "\n\nAlways respond with valid JSON." },
+          { role: "system", content: systemPrompt + "\n\nALWAYS respond with valid JSON in the exact format specified." },
           {
             role: "user",
             content: `Plan:\n${plan}\n\nUser request: ${prompt}${existingFilesContext}\n\nGenerate the code files as JSON.`
@@ -253,7 +252,6 @@ ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError
         ],
         temperature: 0.3,
         max_tokens: 4096, // Maximum supported by OpenAI models
-        response_format: { type: "json_object" },
       })
     );
 
