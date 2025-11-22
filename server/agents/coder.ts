@@ -265,13 +265,46 @@ ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError
     try {
       const result = JSON.parse(content);
       return result as CodeGenerationResult;
-    } catch (error) {
-      // Fallback: try to extract JSON from markdown code blocks
-      const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[1]) as CodeGenerationResult;
+    } catch (error: any) {
+      console.error(`[Coder] Initial JSON parse error: ${error.message}`);
+      
+      // Try multiple extraction strategies
+      let jsonStr: string | null = null;
+      
+      // Strategy 1: Extract from json code block
+      let match = content.match(/```json\n([\s\S]*?)\n```/);
+      if (match) {
+        jsonStr = match[1];
       }
-      throw new Error("Failed to parse code generation response");
+      
+      // Strategy 2: Extract from plain code block
+      if (!jsonStr) {
+        match = content.match(/```\n([\s\S]*?)\n```/);
+        if (match) {
+          jsonStr = match[1];
+        }
+      }
+      
+      // Strategy 3: Find first { and last } in content
+      if (!jsonStr) {
+        const startIdx = content.indexOf('{');
+        const endIdx = content.lastIndexOf('}');
+        if (startIdx !== -1 && endIdx !== -1 && startIdx < endIdx) {
+          jsonStr = content.substring(startIdx, endIdx + 1);
+        }
+      }
+      
+      if (jsonStr) {
+        try {
+          const result = JSON.parse(jsonStr);
+          return result as CodeGenerationResult;
+        } catch (parseError: any) {
+          console.error(`[Coder] Extracted JSON parse error: ${parseError.message}`);
+          throw new Error(`Failed to parse code generation response: ${parseError.message}`);
+        }
+      }
+      
+      throw new Error(`Failed to parse code generation response: ${error.message}`);
     }
   }
 }
