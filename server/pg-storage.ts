@@ -213,7 +213,15 @@ export class PostgresStorage implements IStorage {
   // Session methods
   async createSession(insertSession: InsertSession): Promise<Session> {
     return this.withSessionLock(insertSession.userId, async (tx) => {
-      // Count sessions (pre-insert check)
+      // Clean expired sessions first
+      const now = new Date();
+      await tx.delete(sessions)
+        .where(and(
+          eq(sessions.userId, insertSession.userId),
+          lt(sessions.expiresAt, now)
+        ));
+      
+      // Count active sessions (post-cleanup)
       const userSessions = await tx
         .select()
         .from(sessions)
