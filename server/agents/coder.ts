@@ -262,8 +262,32 @@ ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError
 
     const content = response.choices[0].message.content || "{}";
     
+    // Helper function to clean and repair malformed JSON
+    const cleanJSON = (str: string): string => {
+      // Remove any leading/trailing whitespace
+      str = str.trim();
+      
+      // Fix common issues with code blocks
+      str = str.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/, '');
+      
+      // Escape unescaped backslashes (but not already escaped ones like \\)
+      str = str.replace(/(?<!\\)\\(?!\\|")/g, '\\\\');
+      
+      // Handle raw newlines in string values - replace with escaped newlines
+      // This regex finds strings and escapes newlines within them
+      str = str.replace(/"([^"]*)"/g, (match) => {
+        return match.replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\t/g, '\\t');
+      });
+      
+      // Remove any null bytes or other control characters
+      str = str.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
+      
+      return str;
+    };
+    
     try {
-      const result = JSON.parse(content);
+      const cleaned = cleanJSON(content);
+      const result = JSON.parse(cleaned);
       return result as CodeGenerationResult;
     } catch (error: any) {
       console.error(`[Coder] Initial JSON parse error: ${error.message}`);
@@ -296,10 +320,12 @@ ${previousError ? `\n⚠️ Previous attempt failed with error:\n${previousError
       
       if (jsonStr) {
         try {
-          const result = JSON.parse(jsonStr);
+          const cleaned = cleanJSON(jsonStr);
+          const result = JSON.parse(cleaned);
           return result as CodeGenerationResult;
         } catch (parseError: any) {
           console.error(`[Coder] Extracted JSON parse error: ${parseError.message}`);
+          console.error(`[Coder] Failed JSON (first 500 chars): ${jsonStr.substring(0, 500)}`);
           throw new Error(`Failed to parse code generation response: ${parseError.message}`);
         }
       }
