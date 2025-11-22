@@ -79,23 +79,17 @@ export class AgentOrchestrator {
       
       onStateUpdate({ ...state });
 
-      // Step 0: Clear existing files for React/Vite projects (template needs clean slate)
-      // Only do this if dev servers are available (otherwise we're doing static HTML)
-      const promptLower = context.prompt.toLowerCase();
-      const wantsReactVite = promptLower.includes('react') || promptLower.includes('vite');
-      const isReactVite = wantsReactVite && ENV_CONFIG.sandbox.available && ENV_CONFIG.sandbox.mode !== "mock";
-      
-      if (isReactVite) {
-        state.logs.push("[Orchestrator] Clearing existing files for fresh template generation...");
-        const existingFiles = await this.storage.getFilesByWorkspace(context.workspaceId);
-        for (const file of existingFiles) {
-          await this.storage.deleteFile(file.id);
-        }
-        state.logs.push(`[Orchestrator] Cleared ${existingFiles.length} existing file(s)`);
-        // Update context to reflect empty file list
-        context.existingFiles = [];
-        onStateUpdate({ ...state });
+      // Step 0: Always clear existing files for each new workflow (ensures fresh generation)
+      // This guarantees each prompt generates its own unique code
+      state.logs.push("[Orchestrator] Clearing existing files for fresh code generation...");
+      const existingFiles = await this.storage.getFilesByWorkspace(context.workspaceId);
+      for (const file of existingFiles) {
+        await this.storage.deleteFile(file.id);
       }
+      state.logs.push(`[Orchestrator] Cleared ${existingFiles.length} existing file(s)`);
+      // Update context to reflect empty file list
+      context.existingFiles = [];
+      onStateUpdate({ ...state });
 
       // Step 1: Planning
       state.currentStep = "planning";
