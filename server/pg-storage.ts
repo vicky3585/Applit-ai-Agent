@@ -39,7 +39,8 @@ import { fileSync } from "./file-sync";
 import type { IStorage } from "./storage";
 
 // Security configuration (matching MemStorage)
-const MAX_SESSIONS_PER_USER = parseInt(process.env.MAX_SESSIONS_PER_USER || "5");
+// Increased to 20 for development/admin use - can be overridden via env var
+const MAX_SESSIONS_PER_USER = parseInt(process.env.MAX_SESSIONS_PER_USER || "20");
 
 export class PostgresStorage implements IStorage {
   private initialized: boolean = false;
@@ -225,10 +226,13 @@ export class PostgresStorage implements IStorage {
       const userSessions = await tx
         .select()
         .from(sessions)
-        .where(eq(sessions.userId, insertSession.userId));
+        .where(eq(sessions.userId, insertSession.userId))
+        .orderBy(desc(sessions.createdAt));
       
+      // If at max, delete oldest session to make room
       if (userSessions.length >= MAX_SESSIONS_PER_USER) {
-        throw new Error(`Maximum ${MAX_SESSIONS_PER_USER} active sessions per user exceeded`);
+        const oldestSession = userSessions[userSessions.length - 1];
+        await tx.delete(sessions).where(eq(sessions.id, oldestSession.id));
       }
       
       // Insert new session
