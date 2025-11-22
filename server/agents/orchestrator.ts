@@ -79,15 +79,28 @@ export class AgentOrchestrator {
       
       onStateUpdate({ ...state });
 
-      // Step 0: Always clear existing files for each new workflow (ensures fresh generation)
+      // Step 0: Clear existing files for fresh generation (best effort, non-blocking)
       // This guarantees each prompt generates its own unique code
-      state.logs.push("[Orchestrator] Clearing existing files for fresh code generation...");
-      const existingFiles = await this.storage.getFilesByWorkspace(context.workspaceId);
-      for (const file of existingFiles) {
-        await this.storage.deleteFile(file.id);
-      }
-      state.logs.push(`[Orchestrator] Cleared ${existingFiles.length} existing file(s)`);
-      // Update context to reflect empty file list
+      (async () => {
+        try {
+          state.logs.push("[Orchestrator] Clearing existing files for fresh code generation...");
+          const existingFiles = await this.storage.getFilesByWorkspace(context.workspaceId);
+          let deletedCount = 0;
+          for (const file of existingFiles) {
+            try {
+              await this.storage.deleteFile(file.id);
+              deletedCount++;
+            } catch (deleteError) {
+              console.warn(`[Orchestrator] Skipped file ${file.id}: database busy`);
+            }
+          }
+          state.logs.push(`[Orchestrator] Cleared ${deletedCount}/${existingFiles.length} file(s)`);
+        } catch (error) {
+          console.warn(`[Orchestrator] File cleanup skipped - proceeding with generation`);
+        }
+      })().catch(err => console.warn(`[Orchestrator] Cleanup background error: ${err.message}`));
+      
+      // Don't wait for cleanup - proceed immediately so generation doesn't hang
       context.existingFiles = [];
       onStateUpdate({ ...state });
 
