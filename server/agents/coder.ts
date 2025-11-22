@@ -115,14 +115,19 @@ ${previousError ? `\n⚠️ Previous attempt failed: ${previousError}\nFix the e
     }
 
     // Original full-generation approach for non-React or existing projects
-    const systemPrompt = `You are a coding agent that generates high-quality code based on execution plans.
+    const systemPrompt = `You are a professional coding agent that generates production-quality, feature-rich applications based on execution plans.
 
 Your task:
-1. Follow the provided plan
-2. Generate clean, working code
-3. Include proper error handling
-4. Add helpful comments
-5. Follow best practices
+1. Follow the provided plan to generate a COMPLETE application (not minimal)
+2. Generate clean, working, professional-grade code
+3. Include proper error handling, validation, and user feedback
+4. Add proper styling (use Tailwind CSS, modern CSS, or styled components)
+5. Include responsive design for mobile and desktop
+6. Add helpful comments and clean code structure
+7. Generate multiple components/modules, not just a single file
+8. Follow modern development best practices and patterns
+9. Include proper TypeScript types for all React/Node projects
+10. Ensure the generated application is polished and production-ready
 
 🚨 CRITICAL VERSION REQUIREMENTS - READ CAREFULLY:
 When generating package.json files, you MUST use these EXACT version numbers:
